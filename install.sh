@@ -2,19 +2,19 @@
 # bd-track installer — fetches system deps and installs the tool via pipx.
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/AudensAurantius/bd-track/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/antimike/bd-track/main/install.sh | sh
 #
 # Or for a specific version:
-#   curl -fsSL https://raw.githubusercontent.com/AudensAurantius/bd-track/main/install.sh | sh -s -- v0.5.0
+#   curl -fsSL https://raw.githubusercontent.com/antimike/bd-track/main/install.sh | sh -s -- v0.5.0
 #
 # Environment:
 #   BD_TRACK_REF    Git ref to install (default: main)
-#   BD_TRACK_REPO   Repo URL (default: https://github.com/AudensAurantius/bd-track.git)
+#   BD_TRACK_REPO   Repo URL (default: https://github.com/antimike/bd-track.git)
 
 set -eu
 
 REF="${1:-${BD_TRACK_REF:-main}}"
-REPO="${BD_TRACK_REPO:-https://github.com/AudensAurantius/bd-track.git}"
+REPO="${BD_TRACK_REPO:-https://github.com/antimike/bd-track.git}"
 
 # ---------------------------------------------------------------------------
 # Logging
