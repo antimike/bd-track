@@ -13,11 +13,13 @@ check-deps:
 
 # Install bd-track from this checkout into a pipx venv (a snapshot).
 install: check-deps
-    pipx install --force .
+    -pipx uninstall bd-track
+    pipx install .
 
 # Install editable: code changes in this checkout take effect immediately.
 install-dev: check-deps
-    pipx install --force --editable .
+    -pipx uninstall bd-track
+    pipx install --editable .
 
 # Remove the pipx install.
 uninstall:

@@ -1,6 +1,6 @@
 [project]
 name = "bd-track"
-version = "0.5.0"
+version = "0.5.1"
 description = "Beads + Timewarrior bridge with project lifecycle management and scoped execution queues"
 readme = "README.md"
 requires-python = ">=3.10"

@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-14
+
+### Fixed
+
+- `just install`/`install-dev` now uninstall any existing pipx venv first;
+  `pipx install --force` failed on re-run when pipx used uv to create venvs.
+- `install.sh` no longer runs `cargo install beads` (wrong crate) and defaults
+  to the `antimike/bd-track` repo.
+
 ### Added
 
 - **`bd-track migrate rename`** (`bd-timew-jy9`) — one-way, in-place rename of
