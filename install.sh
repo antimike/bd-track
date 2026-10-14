@@ -78,19 +78,14 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Check for bd (beads) — install via cargo if available, otherwise warn
+# Check for bd (beads) — required at runtime, not auto-installed
 # ---------------------------------------------------------------------------
 if command -v bd >/dev/null 2>&1; then
     log "bd (beads) already installed: $(bd --version 2>/dev/null | head -1)"
 else
-    if command -v cargo >/dev/null 2>&1; then
-        log "Installing bd (beads) via cargo..."
-        cargo install beads || warn "cargo install beads failed; install manually."
-    else
-        warn "bd (beads) not found and cargo unavailable for auto-install."
-        warn "Install it from https://github.com/steveyegge/beads or via 'cargo install beads' after installing Rust."
-        warn "Continuing — bd-track will be installed but won't function until bd is on PATH."
-    fi
+    warn "bd (beads) not found on PATH."
+    warn "Install a release from https://github.com/steveyegge/beads/releases."
+    warn "Continuing — bd-track will be installed but won't function until bd is on PATH."
 fi
 
 # ---------------------------------------------------------------------------
