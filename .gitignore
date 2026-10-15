@@ -26,3 +26,6 @@ venv/
 
 # mise
 mise.local.toml
+
+# Beads JSONL export carries employer/client context; keep local (see docs/spike-cjq-consolidated-beads.md)
+.beads/issues.jsonl
