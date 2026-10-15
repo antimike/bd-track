@@ -263,30 +263,30 @@ def _stub_run_bd_list(issues: list[dict]):
 
 def test_generate_populates_empty_queue(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    issues = [{"id": "J121-a"}, {"id": "J121-b"}]
+    issues = [{"id": "PROJ-a"}, {"id": "PROJ-b"}]
     monkeypatch.setattr("bd_track.queue.run", _stub_run_bd_list(issues))
 
     cmd_generate(scope_arg="pipeline", project_dir=beads_dir.parent,
                  labels_all=["area:pipeline"], yes=True)
-    assert load_all_queues(beads_dir) == {"pipeline": ["J121-a", "J121-b"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["PROJ-a", "PROJ-b"]}
 
 
 def test_generate_append_dedupes(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["J121-a"], scope_arg="pipeline",
+    cmd_queue("push", ids=["PROJ-a"], scope_arg="pipeline",
               project_dir=beads_dir.parent)
-    issues = [{"id": "J121-a"}, {"id": "J121-c"}]
+    issues = [{"id": "PROJ-a"}, {"id": "PROJ-c"}]
     monkeypatch.setattr("bd_track.queue.run", _stub_run_bd_list(issues))
 
     cmd_generate(scope_arg="pipeline", project_dir=beads_dir.parent, append=True)
-    assert load_all_queues(beads_dir) == {"pipeline": ["J121-a", "J121-c"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["PROJ-a", "PROJ-c"]}
 
 
 def test_generate_replace_requires_yes_when_non_interactive(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["J121-old"], scope_arg="pipeline",
+    cmd_queue("push", ids=["PROJ-old"], scope_arg="pipeline",
               project_dir=beads_dir.parent)
-    issues = [{"id": "J121-new"}]
+    issues = [{"id": "PROJ-new"}]
     monkeypatch.setattr("bd_track.queue.run", _stub_run_bd_list(issues))
     # Force non-interactive
     monkeypatch.setattr("bd_track.queue.is_interactive", lambda: False)
@@ -294,17 +294,17 @@ def test_generate_replace_requires_yes_when_non_interactive(beads_dir, monkeypat
     with pytest.raises(SystemExit):
         cmd_generate(scope_arg="pipeline", project_dir=beads_dir.parent)
     # Queue unchanged on abort.
-    assert load_all_queues(beads_dir) == {"pipeline": ["J121-old"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["PROJ-old"]}
 
 
 def test_generate_no_matches_leaves_queue_unchanged(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["J121-a"], scope_arg="pipeline",
+    cmd_queue("push", ids=["PROJ-a"], scope_arg="pipeline",
               project_dir=beads_dir.parent)
     monkeypatch.setattr("bd_track.queue.run", _stub_run_bd_list([]))
 
     cmd_generate(scope_arg="pipeline", project_dir=beads_dir.parent, yes=True)
-    assert load_all_queues(beads_dir) == {"pipeline": ["J121-a"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["PROJ-a"]}
 
 
 # ---------------------------------------------------------------------------

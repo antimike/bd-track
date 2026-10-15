@@ -97,7 +97,7 @@ def _discover_running_dolt_servers() -> list[tuple[int, Path]]:
 
 def cmd_servers() -> None:
     """List registered repos and their Dolt server status, plus any running
-    but unregistered servers (J121-a3v two-pass discovery).
+    but unregistered servers (two-pass discovery).
 
     Pass 1 — registered repos from `~/.config/bd-track/repos.yaml`: the
     canonical view, with last-activity, configured server settings, etc.

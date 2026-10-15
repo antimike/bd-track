@@ -7,9 +7,8 @@ server-mode wiring (.envrc + pass credential).
 `init-project` bootstraps `bd init` when `.beads/` is missing, writes the
 empirically-verified hang preventer (`dolt.auto-push: false`) directly to
 `.beads/config.yaml` before any `bd config set` call, then applies the
-remaining settings via the bd CLI. See J121-xji for the bootstrap rationale
-and `~/.claude/projects/-home-hactar-Source-J121/memory/pitfalls-beads-dolt-remote.md`
-for the auto-push pitfall analysis.
+remaining settings via the bd CLI. The auto-push hang is a known beads/Dolt
+remote pitfall.
 """
 
 from __future__ import annotations
@@ -57,7 +56,7 @@ def _bootstrap_bd_init(
     prefix: str | None,
     agents_profile: str,
 ) -> None:
-    """Run `bd init` in `project_root` when `.beads/` is missing (J121-xji).
+    """Run `bd init` in `project_root` when `.beads/` is missing (PROJ-xji).
 
     Forwards the recommended flags from the empirically-verified hang-safe
     init flow: ``--actor bd-track --dolt-auto-commit batch [--server]
@@ -312,7 +311,7 @@ def cmd_init_project(
     prefix: str | None = None,
     agents_profile: str = "full",
 ) -> None:
-    # Bootstrap path (J121-xji): if .beads/ doesn't exist, run `bd init`
+    # Bootstrap path (PROJ-xji): if .beads/ doesn't exist, run `bd init`
     # ourselves. Forwards --server (when known), --sandbox (default true,
     # safest setting from empirical testing), --prefix, and the chosen
     # agents profile. Skip with --no-bootstrap to preserve the legacy

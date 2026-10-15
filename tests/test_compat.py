@@ -58,7 +58,7 @@ def test_path_compat_defaults_to_new_when_neither(tmp_path):
 
 
 # ---------------------------------------------------------------------------
-# sidecar fallback (the J121 live-project case)
+# sidecar fallback (the live-project case)
 # ---------------------------------------------------------------------------
 
 def test_sidecar_reads_legacy_bd_timew_yaml(tmp_path):

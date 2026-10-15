@@ -6,10 +6,10 @@ Scope resolution: ``--scope`` flag → ``$BD_TRACK_SCOPE`` env var → ``'defaul
 Schema (current, list-of-strings) — backward compatible:
 
     pipeline:
-      - J121-foo
-      - J121-bar
+      - PROJ-foo
+      - PROJ-bar
     tooling:
-      - J121-baz
+      - PROJ-baz
 
 Speculative schema additions (queue-level filter/notes/description, per-item
 notes) are documented in DESIGN_NOTES.md but not yet implemented.

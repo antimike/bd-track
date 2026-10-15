@@ -114,7 +114,7 @@ def test_get_repo_entry_handles_empty_repos():
 
 
 # ---------------------------------------------------------------------------
-# _ensure_auto_push_disabled (J121-i85 / pitfalls-beads-dolt-remote)
+# _ensure_auto_push_disabled (PROJ-i85 / pitfalls-beads-dolt-remote)
 # ---------------------------------------------------------------------------
 
 def test_ensure_auto_push_disabled_creates_nested_when_empty(tmp_path):

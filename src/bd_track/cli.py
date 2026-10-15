@@ -538,7 +538,7 @@ def get_cli_arguments() -> argparse.Namespace:
     )
     p_init.add_argument(
         "--prefix", type=str, default=None,
-        help="Issue prefix for bd init (e.g. 'J121'). Forwarded only when bootstrapping.",
+        help="Issue prefix for bd init (e.g. 'PROJ'). Forwarded only when bootstrapping.",
     )
     p_init.add_argument(
         "--agents-profile", type=str, default="full",

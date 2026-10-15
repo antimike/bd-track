@@ -143,7 +143,7 @@ parent.
 - **`init-project --bootstrap` (default)** — runs `bd init` automatically
   when `.beads/` is missing, forwarding `--server`, `--sandbox`,
   `--prefix`, and `--agents-profile` flags from bd-timew's CLI. Resolves
-  J121-xji ("init-project: bootstrap bd init when .beads/ is missing").
+  PROJ-xji ("init-project: bootstrap bd init when .beads/ is missing").
 - **`init-project --sandbox` (default)** — forwards `--sandbox` to
   `bd init`, the empirically-safe setting that disables auto-sync during
   init and avoids hangs against an active git remote.
@@ -160,7 +160,7 @@ parent.
   registered repos from `~/.config/bd-timew/repos.yaml`, scans running
   `dolt sql-server` processes via `pgrep` + `/proc/<pid>/cwd` and
   reports any unregistered servers with a hint pointing at
-  `bd-timew init-project --path <path>`. Resolves J121-a3v.
+  `bd-timew init-project --path <path>`. Resolves PROJ-a3v.
 
 ### Changed
 

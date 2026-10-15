@@ -250,8 +250,8 @@ def test_timew_ts_to_iso():
 
 def test_split_bead_tags_normal():
     bead, tags = _split_bead_tags(
-        ["J121-dbo", "client:personal", "case:area:claude", "svc:none"])
-    assert bead == "J121-dbo"
+        ["PROJ-dbo", "client:personal", "case:area:claude", "svc:none"])
+    assert bead == "PROJ-dbo"
     assert tags == ["client:personal", "case:area:claude", "svc:none"]
 
 
