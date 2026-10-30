@@ -1,23 +1,23 @@
 # Project registry schema
 
-The project registry names each of MH's projects, matches it to its clone, and holds per-project
-settings for the tools that read it. Default location: `~/.config/projects.yaml`. This document is
-the schema's single source of truth (bead `bd-timew-d0t.1`); the file's header comment should
-link here rather than restate it.
+The project registry names each project, matches it to its clone, and holds per-project settings
+for the tools that read it. Default location: `~/.config/projects.yaml`. This document is the
+schema's single source of truth (bead `bd-timew-d0t.1`); a header comment in the file should link
+here rather than restate it.
 
-Readers today: `ticket` (valid project names, the default project), `mani-discover` (names clones
-in `~/mani.yaml`) and, once `bd-timew-d0t.2` lands, bd-track (replacing
-`~/.config/bd-track/repos.yaml`).
+bd-track reads it once `bd-timew-d0t.2` lands, replacing `~/.config/bd-track/repos.yaml`. Other
+tools may read the same file (in MH's setup, the `ticket` command and `mani-discover`).
 
 ## Ownership
 
-- **bd-track owns this schema document**: it is the published tool, and the other readers are
-  scripts in MH's dotfiles. A schema change is a bd-track change, recorded in the decision log
-  below.
+- **bd-track owns this schema document**: it is the published tool that reads it. A schema change
+  is a bd-track change, recorded in the decision log below.
 - **Each key has one owning tool** (table below). A tool reads any key but writes only its own,
   and preserves every key it does not own, including keys it does not recognise.
-- **Who manages the file** (chezmoi, or the `project-data` repo of chezmoi D71) is not part of
-  this schema; see [Open](#open).
+- **How the file is created and shared is up to the user**: kept by hand, generated or seeded by a
+  dotfiles manager, or synced in a repo, in whole or in part. Some projects may be registered on
+  every machine and others on one host only. bd-track assumes none of this; see
+  [Writing](#writing) for its one requirement.
 
 ## Location
 
@@ -32,7 +32,7 @@ bd-track resolves the registry file in this order:
 
 ```yaml
 projects:
-  amontillado:                        # project name: the key everywhere (ticket, mani, --project)
+  amontillado:                        # project name: --project <name>, and other tools' key
     remote: antimike/amontillado      # owner/repo of the clone's origin
     path: ~/.local/src/amontillado    # optional
     beads:
@@ -46,7 +46,7 @@ projects:
 
 | Key | Owner | Meaning |
 |---|---|---|
-| `projects.<name>` | shared | Project name: lowercase, `[a-z0-9][a-z0-9_-]*`. Also the ticket inbox name, `~/.local/state/triage/<name>/`. |
+| `projects.<name>` | shared | Project name: lowercase, `[a-z0-9][a-z0-9_-]*`. Other tools may key on it too (for example a ticket inbox directory). |
 | `remote` | shared | `owner/repo` of the clone's `origin`. Matched against any host or URL form (`git@github.com:o/r.git`, `https://…/o/r`). Preferred over `path`. |
 | `path` | shared | `~`-relative path. Needed for a repo without a remote, or to pin one of several clones of a remote (only that clone gets the name). |
 | `beads.prefix` | shared | The project's bd issue prefix. Its presence means the project uses beads. |
@@ -61,8 +61,9 @@ them, with a row in this table.
 
 ## Host settings stay out of the registry
 
-The registry is identical on every machine (chezmoi D35). Settings that vary per host live in
-bd-track's own config, `~/.config/bd-track/config.yaml`, which chezmoi may render per host:
+The registry describes projects, and an entry may be shared by several machines. Settings that
+vary per host live in bd-track's own config, `~/.config/bd-track/config.yaml`, which can differ
+on each host:
 
 ```yaml
 global:
@@ -109,8 +110,10 @@ bd-track writes the registry in place (`init-project`, `migrate`):
 - Touch only bd-track-owned keys. A new project gets `remote` (from `origin`) or `path`, and
   `beads.prefix`.
 - Write atomically: a temp file in the same directory, then `rename()`.
-- If chezmoi manages the file (`chezmoi source-path <file>` succeeds), print the follow-up
-  `chezmoi re-add <file>`. bd-track does not run chezmoi itself.
+- bd-track does not detect or call whatever manages the file. **Requirement:** a manager that
+  generates or seeds the file must merge into it rather than overwrite it, or bd-track's writes
+  are lost on its next run. For example, a chezmoi `modify_` script that deep-merges a seed of
+  identity keys (`remote`, `path`, `beads.prefix`) and leaves other keys alone.
 
 ## Legacy `repos.yaml`
 
@@ -139,12 +142,5 @@ implement.
 | 2026-10-30 | bd-track owns this schema document. Keys have one owning tool; unknown keys are preserved. |
 | 2026-10-30 | Host-specific settings (`global:`, path cache) stay in bd-track's own config, not the registry. |
 | 2026-10-30 | bd-track writes the registry in place with `ruamel.yaml` (new dependency), atomically. |
+| 2026-10-30 | bd-track is agnostic about how the file is managed or shared (no dotfiles-manager detection or hints); managers must merge, not overwrite. Projects may be registered on all hosts or only some. |
 | 2026-10-30 | `global.dolt_push` takes `always`/`never` (force) or `true`/`false` (default, overridden per project). Supersedes `bd-timew-ayn.4`'s "per-project override" wording. |
-
-## Open
-
-- **How the file is managed** (a chezmoi question, not a schema question). Options: plain
-  chezmoi-managed (bd-track writes it, then `chezmoi re-add`; today's state); a chezmoi `modify_`
-  script seeding required projects (entries added on one host do not reach the others); or moving
-  it into the D71 `project-data` repo, synced by `sync-repos` and writable by tools. bd-track
-  works with any of these because the location is configurable.
