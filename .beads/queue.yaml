@@ -4,4 +4,22 @@ architecture:
 cutover:
 - bd-timew-cjq
 - bd-timew-a33
-- bd-timew-ive
+tickets:
+- bd-timew-ctp
+- bd-timew-d0t.1
+- bd-timew-4is.1
+- bd-timew-4is.2
+- bd-timew-4is.3
+- bd-timew-4is.4
+- bd-timew-4is.5
+- bd-timew-4is.6
+- bd-timew-d0t.2
+- bd-timew-4is.7
+- bd-timew-d0t.3
+- bd-timew-d0t.4
+- bd-timew-ayn.1
+- bd-timew-ayn.2
+- bd-timew-ayn.3
+- bd-timew-ayn.4
+- bd-timew-ayn.5
+- bd-timew-ayn.6
