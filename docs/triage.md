@@ -22,6 +22,49 @@ The recommended ticket format (frontmatter keys, resolution keys) belongs to the
 tickets, not to bd-track. In MH's setup that is the standalone `ticket` command; bd-track links
 to its spec instead of restating it.
 
+### Where the inbox is
+
+`--inbox DIR` names it directly. Otherwise it is `<root>/<project>`, where `<root>` is
+`$BD_TRACK_INBOX_ROOT`, else `$XDG_STATE_HOME/triage` (`~/.local/state/triage`), and `<project>`
+is the basename of `--project-dir` or of the current git repository. Looking the name up in the
+[project registry](registry-schema.md) instead is `bd-timew-4is.7`.
+
+## Resolving a ticket
+
+```
+bd-track triage resolve <ticket> (--bead | --reject REASON | --duplicate ID | --done OUTCOME)
+                        [--title T] [--description D] [--type T] [--priority N]
+                        [--inbox DIR] [--project-dir DIR] [--dry-run]
+```
+
+`<ticket>` is a file name (with or without `.md`) or a quick note's `inbox-<hash>` id.
+
+| Option | `status` | `outcome` |
+|---|---|---|
+| `--bead` | `accepted` | `bead <id>` |
+| `--reject REASON` | `rejected` | the reason |
+| `--duplicate ID` | `duplicate` | `duplicate of <ID>` |
+| `--done OUTCOME` | `done` | the outcome (e.g. a doc path) |
+
+`resolved` is set to today. The keys are written into the ticket's frontmatter, replacing any
+existing line for the same key and leaving the rest as written; a free-form ticket gets a new
+block. The ticket then moves to `done/` under the same name. A quick note becomes its own
+`done/<date>-<slug>.md`, keeping its stamp's `from`, `date`, `type` and `urgency`, and its
+paragraph is removed from `inbox.md` (deleted once empty). bd-track never overwrites a file in
+`done/`.
+
+`--bead` runs `bd create` in the project with label `triage`, before anything moves; if it fails
+the ticket stays open. Defaults, each overridable:
+
+- **title**: the ticket's title; **description**: the ticket's body. A line
+  `ticket: done/<file> (from <sender>, <date>)` is always appended.
+- **type**: `bug`, `feature` and `task` map to themselves; `idea`, `question` and anything else
+  become `task`.
+- **priority**: urgency `high`/`normal`/`low` become 1/2/3; no urgency is 2.
+
+An agent that rewrites the ticket into the project's bead style (as the `/triage` skill does)
+passes `--title` and `--description`.
+
 ## The filing tool stays outside bd-track
 
 Filing a ticket (the `ticket` command, or `echo >> inbox.md`) is not part of bd-track, and the
@@ -50,3 +93,5 @@ format, and tickets written by hand or by other tools still work.
 | 2026-10-29 | bd-track parses tickets leniently: all frontmatter keys optional; free-form files and `inbox.md` paragraphs are valid tickets. |
 | 2026-10-29 | The core is non-interactive primitives (`triage list --json`, `triage resolve`), with an interactive mode layered on top. |
 | 2026-10-29 | A handled `inbox.md` paragraph is removed from `inbox.md` and written to `done/` as its own file with resolution keys. |
+| 2026-10-30 | Resolution statuses are `accepted`, `rejected`, `duplicate` and `done`, the same set the `/triage` skill writes (`bd-timew-4is.3`). |
+| 2026-10-30 | The default inbox root is `$BD_TRACK_INBOX_ROOT`, else `$XDG_STATE_HOME/triage`; `--inbox` overrides it per call (`bd-timew-4is.3`). |
