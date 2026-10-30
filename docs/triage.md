@@ -1,0 +1,52 @@
+# Triage: the beads layer for a ticket inbox
+
+A ticket inbox is a directory of requests left for a project by other projects, other agents or
+by hand. `bd-track triage` (epic `bd-timew-4is`) is the beads layer over it: it lists a project's
+open tickets and, for each one handled, creates a bead or records why not, then moves the ticket
+to `done/`. Deciding *whether* to accept a ticket is left to a person or an agent (in MH's setup,
+the `/triage` skill in a Claude session); bd-track supplies the mechanics.
+
+## Inbox layout
+
+bd-track reads this layout and parses it leniently. Every frontmatter key is optional, and a
+free-form file or a one-line paragraph is a valid ticket.
+
+```
+<inbox>/<project>/
+  triage/*.md        # one ticket per file
+  triage/inbox.md    # quick notes, one ticket per paragraph
+  done/              # handled tickets, with resolution keys added
+```
+
+The recommended ticket format (frontmatter keys, resolution keys) belongs to the tool that files
+tickets, not to bd-track. In MH's setup that is the standalone `ticket` command; bd-track links
+to its spec instead of restating it.
+
+## The filing tool stays outside bd-track
+
+Filing a ticket (the `ticket` command, or `echo >> inbox.md`) is not part of bd-track, and the
+ticket format spec lives with the filing tool. bd-track implements only the beads layer.
+
+Why:
+
+- **The inbox must work without beads.** Projects without a `.beads/` database, and people
+  without `bd` or Dolt, still file and read tickets. bd-track requires `bd`.
+- **bd-track's scope is already wide**: time tracking, project setup, queues, maintenance.
+- **Release coupling.** A change to filing or to the format should not need a bd-track release.
+
+Folding filing in had real advantages, which this decision gives up: bd-track already keeps the
+project list, handles beads, and has the Python, test and release setup. If the shared project
+registry later moves into its own package ([A shared package](registry-schema.md#a-shared-package-deferred)),
+`ticket` may ship as that package's CLI; it still would not be part of bd-track.
+
+Because bd-track parses leniently, it does not have to follow every change to the recommended
+format, and tickets written by hand or by other tools still work.
+
+## Decision log
+
+| Date | Decision |
+|---|---|
+| 2026-10-29 | The filing tool (`ticket`) stays standalone, outside bd-track, and owns the ticket format spec. bd-track implements only the beads layer and links to the spec (`bd-timew-4is.1`; MH, from the 2026-10-29 analysis in the triage ticket). |
+| 2026-10-29 | bd-track parses tickets leniently: all frontmatter keys optional; free-form files and `inbox.md` paragraphs are valid tickets. |
+| 2026-10-29 | The core is non-interactive primitives (`triage list --json`, `triage resolve`), with an interactive mode layered on top. |
+| 2026-10-29 | A handled `inbox.md` paragraph is removed from `inbox.md` and written to `done/` as its own file with resolution keys. |
