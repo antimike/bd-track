@@ -29,3 +29,7 @@ mise.local.toml
 
 # Beads JSONL export carries employer/client context; keep local (see docs/spike-cjq-consolidated-beads.md)
 .beads/issues.jsonl
+
+# Beads / Dolt files (added by bd init)
+.beads/proxieddb/
+*.gate.lock*

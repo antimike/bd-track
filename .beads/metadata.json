@@ -1,8 +1,6 @@
 {
   "database": "dolt",
   "backend": "dolt",
-  "dolt_mode": "server",
-  "dolt_database": "bd_timew",
-  "project_id": "255f23ac-f285-496d-9d05-3d6f05faf51e",
-  "global_dolt_database": "beads_global"
+  "dolt_mode": "embedded",
+  "dolt_database": "bd_timew"
 }
