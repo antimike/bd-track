@@ -6,6 +6,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- `bd-track queue prune` no longer proposes `add-before` for a queued bead's
+  parent epic; only blocking dependency edges imply ordering (`bd-timew-ctp`).
+
 ## [0.5.1] - 2026-10-14
 
 ### Fixed

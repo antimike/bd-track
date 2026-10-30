@@ -377,3 +377,33 @@ def test_prune_detects_dependency_ordering(beads_dir, monkeypatch, capsys):
     assert "[reorder]" in out
     # Reorder recommendations are not auto-applied.
     assert load_all_queues(beads_dir) == {"pipeline": ["A", "B"]}
+
+
+def test_prune_ignores_non_blocking_edges(beads_dir, monkeypatch, capsys):
+    """A queued child's parent epic is not a prerequisite (bd-timew-ctp).
+
+    An open epic stays open until its children close, so proposing to queue
+    it first is unworkable. Only blocking edges imply ordering.
+    """
+    monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
+    cmd_queue("push", ids=["E.1", "E.2"], scope_arg="pipeline",
+              project_dir=beads_dir.parent)
+
+    statuses = {"E": "open", "E.1": "open", "E.2": "open", "R": "open"}
+    dependencies = {
+        "E.1": [{"id": "E", "dependency_type": "parent-child", "status": "open"}],
+        "E.2": [
+            {"id": "E", "dependency_type": "parent-child", "status": "open"},
+            {"id": "E.1", "dependency_type": "blocks", "status": "open"},
+            {"id": "R", "dependency_type": "related", "status": "open"},
+        ],
+    }
+    monkeypatch.setattr(
+        "bd_track.queue.get_issue",
+        _stub_get_issue(statuses, dependencies=dependencies),
+    )
+
+    cmd_prune(scope_arg="pipeline", project_dir=beads_dir.parent, yes=True)
+    out = capsys.readouterr().out
+    assert "[add-before]" not in out
+    assert "[reorder]" not in out
