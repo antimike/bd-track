@@ -38,6 +38,12 @@ from bd_track.util import (
 # `clean` (mechanical) and surfaced by `prune` (analytical).
 STALE_STATUSES = {"closed", "deferred"}
 
+# Dependency types that impose ordering, i.e. the dependency must close first.
+# parent-child is deliberately excluded: an open epic stays open until its
+# children close, so it can never be queued ahead of them. related, tracks,
+# discovered-from etc. carry no ordering at all.
+BLOCKING_DEP_TYPES = {"blocks", "blocked-by", "conditional-blocks", "waits-for"}
+
 
 def _fetch_title(bead_id: str) -> str:
     """Return the bead title, or '' on any error (non-fatal)."""
@@ -441,7 +447,7 @@ def _proposals_for_queue(
             if not isinstance(dep, dict):
                 continue
             dep_type = dep.get("dependency_type")
-            if dep_type not in ("blocks", "blocked-by", "parent-child"):
+            if dep_type not in BLOCKING_DEP_TYPES:
                 continue
             dep_id = dep.get("id")
             if not dep_id:
