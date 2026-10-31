@@ -6,8 +6,40 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-30
+
+### Added
+
+- **`bd-track triage`** (`bd-timew-4is`): the beads layer over a project's ticket
+  inbox (`<inbox>/triage/*.md` files and `triage/inbox.md` quick notes; see
+  `docs/triage.md`). Parsing is lenient: every frontmatter key is optional and
+  free-form tickets are valid.
+  - `triage list [--json]`: open tickets as a table, or JSON for scripts and agents.
+  - `triage resolve <ticket> (--bead | --reject | --duplicate | --done)`: record the
+    decision (`status`, `resolved`, `outcome`) and move the ticket to `done/`;
+    `--bead` creates a bead (label `triage`, type and priority mapped from the
+    ticket, overridable with `--title`/`--description`/`--type`/`--priority`).
+  - `triage ask <ticket> <question>`: append a `## Triage <date>` section; the ticket
+    stays open (a quick note is promoted to its own file first).
+  - Bare `bd-track triage`: an interactive loop over the open tickets.
+  - `--dry-run` on all of them; the inbox is `--inbox`, else
+    `$BD_TRACK_INBOX_ROOT/<project>`, else `$XDG_STATE_HOME/triage/<project>`, where
+    `<project>` is the directory's registry name.
+- **Shared project registry** (`bd-timew-d0t.2`, `docs/registry-schema.md`): bd-track
+  reads `~/.config/projects.yaml` (or `--registry`, `$BD_TRACK_REGISTRY`), falling back
+  to the legacy `~/.config/bd-track/repos.yaml`. While `repos.yaml` still exists, its
+  entries fill in paths and bd-track settings for registry projects with a matching
+  remote. Host settings come from `~/.config/bd-track/config.yaml`, else `repos.yaml`
+  `global:`. Cleanup, `servers`, `server-stop`, `idle-stop`, `migrate`, `--project` and
+  `--global` read the registry; `init-project` still writes `repos.yaml` for now.
+- New dependency: `ruamel.yaml` (round-trip registry writes). An existing editable
+  install needs `just install-dev` to pick it up.
+
 ### Fixed
 
+- The automatic queue sweep after `bd-track stop` removes only closed beads, so
+  deferred beads (e.g. parked in a `<scope>.operator` scope) stay queued; `queue clean`
+  and `queue prune` still treat deferred as stale (`bd-timew-eue`).
 - `bd-track queue prune` no longer proposes `add-before` for a queued bead's
   parent epic; only blocking dependency edges imply ordering (`bd-timew-ctp`).
 
@@ -218,7 +250,9 @@ time-tracking workflow into a multi-module Python package.
   v0.2.0.
 - systemd user units for cleanup and idle-stop timers.
 
-[Unreleased]: https://github.com/AudensAurantius/bd-timew/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/AudensAurantius/bd-timew/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/AudensAurantius/bd-timew/compare/v0.5.1...v0.6.0
+[0.5.1]: https://github.com/AudensAurantius/bd-timew/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/AudensAurantius/bd-timew/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/AudensAurantius/bd-timew/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/AudensAurantius/bd-timew/compare/v0.2.0...v0.3.0
