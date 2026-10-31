@@ -29,6 +29,18 @@ from bd_track.triage import (
 FIXTURE = Path(__file__).parent / "fixtures" / "triage_inbox"
 
 
+@pytest.fixture(autouse=True)
+def isolated_registry(tmp_path: Path, monkeypatch) -> Path:
+    """Keep every test off the user's real project registry and repos.yaml."""
+    from bd_track import registry
+
+    path = tmp_path / "projects.yaml"
+    path.write_text("projects: {}\n")
+    monkeypatch.setenv("BD_TRACK_REGISTRY", str(path))
+    monkeypatch.setattr(registry, "REPOS_CONFIG", tmp_path / "no-repos.yaml")
+    return path
+
+
 @pytest.fixture
 def tickets() -> dict:
     return {t.id: t for t in read_inbox(FIXTURE, include_handled=True)}
@@ -609,3 +621,26 @@ def test_interactive_requires_tty(inbox: Path):
         pytest.raises(SystemExit, match="needs a terminal"),
     ):
         cmd_triage_interactive(inbox=inbox)
+
+
+def _git_clone(path: Path, origin: str) -> Path:
+    path.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    subprocess.run(["git", "-C", str(path), "remote", "add", "origin", origin], check=True)
+    return path
+
+
+def test_find_inbox_uses_registry_name(tmp_path: Path, monkeypatch, isolated_registry: Path):
+    clone = _git_clone(tmp_path / "worktrees" / "feature-x", "git@github.com:me/dotfiles.git")
+    isolated_registry.write_text("projects:\n  dots:\n    remote: me/dotfiles\n")
+    monkeypatch.setenv("BD_TRACK_INBOX_ROOT", str(tmp_path / "root"))
+    assert find_inbox(None, clone) == tmp_path / "root" / "dots"
+
+
+def test_find_inbox_falls_back_to_basename(tmp_path: Path, monkeypatch, isolated_registry, caplog):
+    clone = _git_clone(tmp_path / "src" / "tool", "git@github.com:me/tool.git")
+    monkeypatch.setenv("BD_TRACK_INBOX_ROOT", str(tmp_path / "root"))
+    assert find_inbox(None, clone) == tmp_path / "root" / "tool"  # not registered
+    isolated_registry.write_text("projects: [\n")
+    assert find_inbox(None, clone) == tmp_path / "root" / "tool"  # unreadable registry
+    assert "project registry unusable" in caplog.text

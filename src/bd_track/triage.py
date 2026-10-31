@@ -270,11 +270,26 @@ def project_root(project_dir: Path | None = None) -> Path:
     return Path.cwd()
 
 
+def project_name(root: Path) -> str:
+    """The registry name of the project at ``root``, else its directory basename.
+
+    A registry that cannot be read is reported and ignored: the inbox works without one.
+    """
+    from bd_track.registry import RegistryError, load_registry
+
+    try:
+        project = load_registry().for_directory(root)
+    except RegistryError as err:
+        root_log.warning("project registry unusable (%s); naming the inbox by directory", err)
+        return root.name
+    return project.name if project is not None else root.name
+
+
 def find_inbox(inbox: Path | None = None, project_dir: Path | None = None) -> Path:
-    """The project's inbox: ``inbox`` if given, else ``<inbox_root>/<project basename>``."""
+    """The project's inbox: ``inbox`` if given, else ``<inbox_root>/<project name>``."""
     if inbox is not None:
         return inbox.expanduser().resolve()
-    return inbox_root() / project_root(project_dir).name
+    return inbox_root() / project_name(project_root(project_dir))
 
 
 def find_ticket(inbox: Path, ticket_id: str) -> Ticket:

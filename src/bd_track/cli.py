@@ -44,8 +44,9 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
             "Work a project's ticket inbox: <inbox>/triage/*.md files and "
             "<inbox>/triage/inbox.md paragraphs. The inbox is --inbox, else "
             "$BD_TRACK_INBOX_ROOT/<project>, else $XDG_STATE_HOME/triage/<project> "
-            "(~/.local/state/triage/<project>), where <project> is the basename of "
-            "--project-dir or of the current git repository. See docs/triage.md."
+            "(~/.local/state/triage/<project>), where <project> is the registry name of "
+            "--project-dir or of the current git repository (else its basename). "
+            "See docs/triage.md."
         ),
         formatter_class=HelpFormatter,
     )
