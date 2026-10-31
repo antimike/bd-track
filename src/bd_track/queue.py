@@ -38,6 +38,11 @@ from bd_track.util import (
 # `clean` (mechanical) and surfaced by `prune` (analytical).
 STALE_STATUSES = {"closed", "deferred"}
 
+# What the automatic sweep after `bd-track stop` removes. Deferred is deliberate (a bead put on
+# ice, or parked in a ``<scope>.operator`` scope by /work-queue), so only an explicit `clean`
+# drops it (bd-timew-eue).
+STOP_SWEEP_STATUSES = {"closed"}
+
 # Dependency types that impose ordering, i.e. the dependency must close first.
 # parent-child is deliberately excluded: an open epic stays open until its
 # children close, so it can never be queued ahead of them. related, tracks,
@@ -226,12 +231,13 @@ def cmd_clean(
     scope_arg: str | None = None,
     project_dir: Path | None = None,
     quiet: bool = False,
+    statuses: set[str] = STALE_STATUSES,
 ) -> int:
-    """Remove closed/deferred beads from one or all queue scopes.
+    """Remove beads whose status is in ``statuses`` (default: closed, deferred) from queues.
 
     Default behaviour (no ``--scope`` and no env var): sweep every scope. This
-    is the form invoked by ``bd-track stop`` after a stop completes. Pass an
-    explicit scope to limit the sweep.
+    is the form invoked by ``bd-track stop`` after a stop completes, with
+    ``statuses=STOP_SWEEP_STATUSES``. Pass an explicit scope to limit the sweep.
 
     Returns the number of entries removed across all scopes.
     """
@@ -260,7 +266,7 @@ def cmd_clean(
                 # Bead not found — leave it so the user notices via prune.
                 keep.append(bead_id)
                 continue
-            if issue.get("status") in STALE_STATUSES:
+            if issue.get("status") in statuses:
                 drop.append((bead_id, issue.get("status")))
             else:
                 keep.append(bead_id)

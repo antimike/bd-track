@@ -91,7 +91,7 @@ bd-track status
 # Check every open interval across ALL sessions
 bd-track active
 
-# Stop (also sweeps closed/deferred beads from queues — pass --no-clean to skip)
+# Stop (also sweeps closed beads from queues; deferred ones stay — pass --no-clean to skip)
 bd-track stop <bead-id>
 
 # Report closed time, grouped and totaled under a policy

@@ -121,6 +121,22 @@ def test_stop_closes_own_open_interval(proj, monkeypatch):
     assert _open(proj, "s1") == []
 
 
+def test_stop_sweep_keeps_deferred_drops_closed(proj, monkeypatch):
+    """Parked (deferred) beads survive the post-stop sweep; closed ones do not (bd-timew-eue)."""
+    from bd_track import queue
+
+    monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
+    monkeypatch.setattr(queue, "find_beads_dir", lambda project_dir=None: proj)
+    statuses = {"PARKED": "deferred", "DONE": "closed", "NEXT": "open"}
+    monkeypatch.setattr(queue, "get_issue", lambda iid: {"id": iid, "status": statuses[iid]})
+    queue.save_all_queues(proj, {"work": ["DONE", "NEXT"], "work.operator": ["PARKED"]})
+    _issue(monkeypatch)
+    _claims(monkeypatch)
+    track.cmd_start("bead-1", session_id="s1")
+    track.cmd_stop(session_id="s1")
+    assert queue.load_all_queues(proj) == {"work": ["NEXT"], "work.operator": ["PARKED"]}
+
+
 def test_stop_never_closes_other_session(proj, monkeypatch):
     _issue(monkeypatch)
     _claims(monkeypatch)

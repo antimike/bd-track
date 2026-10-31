@@ -339,7 +339,8 @@ def get_cli_arguments() -> argparse.Namespace:
             "timew backend, a no-argument stop can never reach another session's "
             "interval — it only closes ULIDs in the caller's own session log. "
             "After stopping, runs `queue clean` automatically to drop any newly-"
-            "closed beads from queue scopes; pass --no-clean to skip."
+            "closed beads from queue scopes (deferred beads stay queued); pass "
+            "--no-clean to skip."
         ),
         formatter_class=HelpFormatter,
     )
@@ -354,7 +355,7 @@ def get_cli_arguments() -> argparse.Namespace:
     )
     p_stop.add_argument(
         "--no-clean", action="store_false", dest="clean", default=True,
-        help="Skip the post-stop queue sweep for closed/deferred beads.",
+        help="Skip the post-stop queue sweep for closed beads.",
     )
 
     # -- show ----------------------------------------------------------------
