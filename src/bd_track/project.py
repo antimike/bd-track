@@ -23,12 +23,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-import yaml
-
 from bd_track.templates import render
 from bd_track.util import (
     CLEANUP_STATE,
-    REPOS_CONFIG,
     SYSTEMD_CLEANUP_NAME,
     SYSTEMD_IDLE_STOP_NAME,
     cleanup_log,
@@ -124,34 +121,69 @@ def _ensure_auto_push_disabled(beads_dir: Path) -> None:
 # Repos config helpers
 # ---------------------------------------------------------------------------
 
-def load_repos_config() -> dict:
-    """Raw legacy ``repos.yaml``, for ``init-project``'s writes only (until bd-timew-d0t.4).
+def _registry_target(project_root: Path, name: str | None) -> tuple[str, object | None]:
+    """The registry name to write for ``project_root`` and its existing entry, if any.
 
-    Readers use the project registry (``bd_track.registry``) instead.
+    An existing project (by path, or by ``origin`` matched against ``remote``) keeps its name.
+    A new one is named ``name``, else the directory basename (lowercased); a name taken by a
+    different project is an error.
     """
-    if not REPOS_CONFIG.exists():
-        return {"global": {"defaults": {"statuses": [], "hooks": []}}, "repos": []}
-    with REPOS_CONFIG.open() as f:
-        data = yaml.safe_load(f) or {}
-    data.setdefault("global", {})
-    data["global"].setdefault("defaults", {})
-    data["global"]["defaults"].setdefault("statuses", [])
-    data["global"]["defaults"].setdefault("hooks", [])
-    data.setdefault("repos", [])
-    return data
+    from bd_track.registry import NAME_RE, load_registry_or_exit
+
+    registry = load_registry_or_exit()
+    existing = registry.for_directory(project_root)
+    if existing is not None:
+        if name and name != existing.name:
+            sys.exit(f"bd-track: {project_root} is already registered as {existing.name!r}")
+        return existing.name, existing
+    chosen = name or project_root.name.lower()
+    if not NAME_RE.fullmatch(chosen):
+        sys.exit(f"bd-track: {chosen!r} is not a valid project name "
+                 "([a-z0-9][a-z0-9_-]*); pass --name")
+    if registry.get(chosen) is not None:
+        sys.exit(f"bd-track: project name {chosen!r} is taken by another project; pass --name")
+    return chosen, None
 
 
-def save_repos_config(data: dict) -> None:
-    REPOS_CONFIG.parent.mkdir(parents=True, exist_ok=True)
-    with REPOS_CONFIG.open("w") as f:
-        yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+def _register(
+    project_root: Path, name: str, beads_values: dict, *, prefix: str | None,
+) -> None:
+    """Write the project to the registry: identity keys if new, then bd-track's beads keys."""
+    from bd_track.registry import RegistryError, origin_remote, set_project
+
+    remote = origin_remote(project_root)
+    identity: dict = {"remote": remote} if remote else {"path": _home_relative(project_root)}
+    effective_prefix = prefix or _issue_prefix(project_root)
+    beads = dict(beads_values)
+    if effective_prefix:
+        beads["prefix"] = effective_prefix
+    try:
+        set_project(name, {**identity, "beads": beads})
+    except RegistryError as err:
+        sys.exit(f"bd-track: {err}")
 
 
-def _get_repo_entry(config: dict, project_path: str) -> dict | None:
-    for repo in config["repos"]:
-        if repo.get("path") == project_path:
-            return repo
-    return None
+def _issue_prefix(project_root: Path) -> str | None:
+    result = run(["bd", "config", "get", "issue_prefix"], check=False, capture=True,
+                 cwd=project_root)
+    value = result.stdout.strip() if result.returncode == 0 else ""
+    return value if value and "not set" not in value else None
+
+
+def _home_relative(path: Path) -> str:
+    try:
+        return "~/" + str(path.resolve().relative_to(Path.home()))
+    except ValueError:
+        return str(path)
+
+
+def _set_host_or_warn(values: dict) -> None:
+    from bd_track.registry import RegistryError, set_host
+
+    try:
+        set_host(values)
+    except RegistryError as err:
+        root_log.warning("could not record host settings %s: %s", values, err)
 
 
 def _load_cleanup_state() -> dict:
@@ -314,6 +346,7 @@ def cmd_init_project(
     sandbox: bool = True,
     prefix: str | None = None,
     agents_profile: str = "full",
+    name: str | None = None,
 ) -> None:
     # Bootstrap path (PROJ-xji): if .beads/ doesn't exist, run `bd init`
     # ourselves. Forwards --server (when known), --sandbox (default true,
@@ -347,10 +380,12 @@ def cmd_init_project(
     else:
         root_log.debug("Sidecar already exists at %s, skipping scaffold.", sidecar)
 
-    config = load_repos_config()
-    existing_entry = _get_repo_entry(config, project_path)
+    from bd_track.registry import load_host_config
+
+    registry_name, existing_entry = _registry_target(project_root, name)
+    host = load_host_config()
     if existing_entry is not None:
-        root_log.info("Project already registered: %s", project_path)
+        root_log.info("Project already registered as %r: %s", registry_name, project_path)
         if not confirm(
             "Re-apply all init-project settings to this project?",
             default=True, yes=yes,
@@ -360,7 +395,7 @@ def cmd_init_project(
     else:
         root_log.info("Initialising Beads project at %s", project_path)
 
-    global_defaults = config["global"]["defaults"]
+    global_defaults = host["defaults"]
 
     effective_days = days
     if effective_days is None:
@@ -471,31 +506,28 @@ def cmd_init_project(
                 _update_envrc(project_root, effective_pass_path)
                 _provision_dolt_user(project_root, effective_user, effective_pass_path)
 
-    repo_entry: dict = existing_entry if existing_entry is not None else {}
-    repo_entry["path"] = project_path
-    repo_entry["commit_cadence"] = effective_cadence
-    repo_entry["compact_days"] = effective_days
-    repo_entry["statuses"] = effective_statuses
+    beads_values: dict = {
+        "commit_cadence": effective_cadence,
+        "compact_days": effective_days,
+        "statuses": effective_statuses,
+    }
     if effective_server and effective_pass_path:
-        repo_entry["server"] = {
+        beads_values["server"] = {
             "enabled": True,
             "pass_path": effective_pass_path,
             "dolt_user": dolt_user or project_root.name.lower(),
         }
     elif not effective_server:
-        repo_entry.pop("server", None)
-
-    if existing_entry is None:
-        config["repos"].append(repo_entry)
-    config["global"]["idle_stop_hours"] = effective_idle_hours
-    save_repos_config(config)
+        beads_values["server"] = None  # removes a stale server block
+    _register(project_root, registry_name, beads_values, prefix=prefix)
     root_log.info(
-        "%s in %s",
+        "%s project %r in the registry",
         "Updated" if existing_entry else "Registered",
-        REPOS_CONFIG,
+        registry_name,
     )
+    _set_host_or_warn({"idle_stop_hours": effective_idle_hours})
 
-    global_interval = config["global"].get("check_interval", check_interval)
+    global_interval = host.get("check_interval", check_interval)
     try:
         interval_td = parse_cadence(_INTERVAL_ALIASES.get(global_interval, global_interval))
         repo_cadence_td = parse_cadence(effective_cadence)
@@ -511,12 +543,10 @@ def cmd_init_project(
     if not install_systemd:
         return
 
-    _install_systemd_units(check_interval, effective_idle_hours, config)
+    _install_systemd_units(check_interval, effective_idle_hours)
 
 
-def _install_systemd_units(
-    check_interval: str, idle_stop_hours: int, config: dict,
-) -> None:
+def _install_systemd_units(check_interval: str, idle_stop_hours: int) -> None:
     """Install the cleanup + idle-stop systemd user units (idempotent)."""
     systemd_dir = Path.home() / ".config" / "systemd" / "user"
     systemd_dir.mkdir(parents=True, exist_ok=True)
@@ -537,8 +567,7 @@ def _install_systemd_units(
         "Cleanup service",
     )
     if not cleanup_timer.exists():
-        config["global"]["check_interval"] = check_interval
-        save_repos_config(config)
+        _set_host_or_warn({"check_interval": check_interval})
         cleanup_timer.write_text(render(
             "systemd/bd-track-cleanup.timer.tmpl",
             CHECK_INTERVAL=check_interval,

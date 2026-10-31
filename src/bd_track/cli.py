@@ -645,6 +645,11 @@ def get_cli_arguments() -> argparse.Namespace:
         help="Issue prefix for bd init (e.g. 'PROJ'). Forwarded only when bootstrapping.",
     )
     p_init.add_argument(
+        "--name", type=str, default=None,
+        help="Project name in the registry (default: the directory basename, lowercased). "
+             "An already-registered project keeps its name.",
+    )
+    p_init.add_argument(
         "--agents-profile", type=str, default="full",
         choices=["minimal", "full"],
         help="bd init --agents-profile value (default: full — full bd command reference "
@@ -733,6 +738,25 @@ def get_cli_arguments() -> argparse.Namespace:
     p_migrate_rename.add_argument(
         "--no-backup", action="store_false", dest="backup", default=True,
         help="Skip the per-file .bak backup before rewriting env files.",
+    )
+
+    p_migrate_registry = p_migrate_sub.add_parser(
+        "registry",
+        help="Move ~/.config/bd-track/repos.yaml into the project registry (projects.yaml).",
+        description=(
+            "Write each repos.yaml entry into the registry (a project with the same path, or "
+            "the path-less one whose remote matches the clone's origin, gets only the bd-track "
+            "keys it does not already set; others are added under their basename), copy "
+            "repos.yaml's global: block into ~/.config/bd-track/config.yaml if that file does "
+            "not exist, record the clones' paths in the path cache, then rename repos.yaml to "
+            "repos.yaml.migrated. Entries whose name is taken are skipped and repos.yaml stays. "
+            "Dry-run by default."
+        ),
+        formatter_class=HelpFormatter,
+    )
+    p_migrate_registry.add_argument(
+        "--apply", action="store_true", default=False,
+        help="Perform the migration (default is a dry-run preview).",
     )
 
     p_migrate_import = p_migrate_sub.add_parser(
@@ -941,6 +965,7 @@ def main() -> None:
             pass_path=args.pass_path, yes=args.yes,
             bootstrap=args.bootstrap, sandbox=args.sandbox,
             prefix=args.prefix, agents_profile=args.agents_profile,
+            name=args.name,
         )
     elif args.cmd == "config":
         if args.config_action == "init":
@@ -965,6 +990,9 @@ def main() -> None:
                 project_dir=args.project_dir, all_repos=args.all_repos,
                 apply=args.apply, backup=args.backup,
             )
+        elif args.migrate_action == "registry":
+            from bd_track.migrate import cmd_migrate_registry
+            cmd_migrate_registry(apply=args.apply)
         elif args.migrate_action == "import":
             from bd_track.migrate import cmd_migrate_import
             cmd_migrate_import(
