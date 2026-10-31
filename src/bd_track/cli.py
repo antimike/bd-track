@@ -36,8 +36,11 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
     """Attach the ``triage <action>`` parser tree (the beads layer over a ticket inbox)."""
     p_triage = sub.add_parser(
         "triage",
-        help="Turn a project's ticket inbox into beads (list, resolve).",
+        help="Turn a project's ticket inbox into beads (interactive, list, resolve, ask).",
         description=(
+            "With no action, walk the open tickets interactively: accept (create a "
+            "bead), reject, duplicate, skip, or ask a question (the ticket stays open). "
+            "--dry-run prints each action instead of writing.\n\n"
             "Work a project's ticket inbox: <inbox>/triage/*.md files and "
             "<inbox>/triage/inbox.md paragraphs. The inbox is --inbox, else "
             "$BD_TRACK_INBOX_ROOT/<project>, else $XDG_STATE_HOME/triage/<project> "
@@ -46,19 +49,28 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
         ),
         formatter_class=HelpFormatter,
     )
-    tsub = p_triage.add_subparsers(dest="triage_action", required=True,
-                                   title="triage actions", metavar="<action>")
+    # The shared options are accepted before or after <action>. On the subparsers they
+    # default to SUPPRESS so an option given before the action is not reset to None.
+    def add_common(parser: argparse.ArgumentParser, default: object) -> None:
+        parser.add_argument(
+            "--inbox", type=Path, default=default,
+            help="The project's inbox directory (holds triage/ and done/).",
+        )
+        parser.add_argument(
+            "--project-dir", type=Path, default=default,
+            help="Project root; names the inbox and is where beads are created. "
+                 "Defaults to the current git repository.",
+        )
+        parser.add_argument(
+            "--dry-run", action="store_true", default=False if default is None else default,
+            help="Print what would happen without writing anything.",
+        )
 
+    add_common(p_triage, None)
+    tsub = p_triage.add_subparsers(dest="triage_action", required=False,
+                                   title="triage actions", metavar="<action>")
     common = argparse.ArgumentParser(add_help=False)
-    common.add_argument(
-        "--inbox", type=Path, default=None,
-        help="The project's inbox directory (holds triage/ and done/).",
-    )
-    common.add_argument(
-        "--project-dir", type=Path, default=None,
-        help="Project root; names the inbox and is where beads are created. "
-             "Defaults to the current git repository.",
-    )
+    add_common(common, argparse.SUPPRESS)
 
     p_list = tsub.add_parser(
         "list", parents=[common],
@@ -106,8 +118,20 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
                            help="Bead type (default: from the ticket type; idea/question -> task).")
     bead_opts.add_argument("--priority", type=int, choices=range(5), default=None,
                            help="Bead priority 0-4 (default: urgency high/normal/low -> 1/2/3).")
-    p_resolve.add_argument("--dry-run", action="store_true",
-                           help="Print what would happen without writing anything.")
+
+    p_ask = tsub.add_parser(
+        "ask", parents=[common],
+        help="Append a '## Triage <date>' question to a ticket; it stays open.",
+        description=(
+            "Record what is unclear and who must answer. A quick note is promoted to "
+            "its own ticket file in triage/ first, since a paragraph has no room for "
+            "a section."
+        ),
+        formatter_class=HelpFormatter,
+    )
+    p_ask.add_argument("ticket_id", metavar="<ticket>",
+                       help="Ticket id: a file name (with or without .md) or inbox-<hash>.")
+    p_ask.add_argument("question", metavar="<question>")
 
 
 def _add_queue_parsers(sub: argparse._SubParsersAction) -> None:
@@ -948,7 +972,15 @@ def main() -> None:
     elif args.cmd == "queue":
         _dispatch_queue(args)
     elif args.cmd == "triage":
-        if args.triage_action == "list":
+        if args.triage_action is None:
+            from bd_track.triage import cmd_triage_interactive
+            cmd_triage_interactive(inbox=args.inbox, project_dir=args.project_dir,
+                                   dry_run=args.dry_run)
+        elif args.triage_action == "ask":
+            from bd_track.triage import cmd_triage_ask
+            cmd_triage_ask(args.ticket_id, args.question, inbox=args.inbox,
+                           project_dir=args.project_dir, dry_run=args.dry_run)
+        elif args.triage_action == "list":
             from bd_track.triage import cmd_triage_list
             cmd_triage_list(inbox=args.inbox, project_dir=args.project_dir,
                             as_json=args.as_json)
