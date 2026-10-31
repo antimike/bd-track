@@ -445,9 +445,10 @@ def load_registry_or_exit(explicit: Path | None = None, *, scan: bool | None = N
 def set_project(name: str, values: dict, explicit: Path | None = None) -> Path:
     """Write ``values`` for project ``name`` into the registry file; return the file.
 
-    Only bd-track-owned keys are replaced. Shared identity keys (``remote``, ``path``,
-    ``beads.prefix``) are written only when absent, so a new project can be registered but
-    another tool's values are never changed. Everything else in the file is preserved.
+    Only bd-track-owned keys are replaced; a ``None`` value removes one. Shared identity keys
+    (``remote``, ``path``, ``beads.prefix``) are written only when absent, so a new project can
+    be registered but another tool's values are never changed. Everything else in the file is
+    preserved.
     """
     if not NAME_RE.fullmatch(name):
         raise RegistryError(f"invalid project name {name!r} (names are [a-z0-9][a-z0-9_-]*)")
@@ -491,13 +492,57 @@ def set_project(name: str, values: dict, explicit: Path | None = None) -> Path:
         if "prefix" in beads_values and "prefix" not in beads:
             beads["prefix"] = beads_values["prefix"]
         for key in BD_TRACK_BEADS_KEYS:
-            if key in beads_values:
+            if key not in beads_values:
+                continue
+            if beads_values[key] is None:
+                beads.pop(key, None)
+            else:
                 beads[key] = beads_values[key]
 
     out = StringIO()
     yaml.dump(data, out)
     _atomic_write(target, out.getvalue())
     return target
+
+
+HOST_KEYS = ("check_interval", "idle_stop_hours", "dolt_push", "defaults", "scan_roots")
+
+
+def set_host(values: dict) -> Path:
+    """Write ``values`` into ``config.yaml`` ``global:`` (created if missing), round-trip.
+
+    Only the given keys change; other keys and comments are kept.
+    """
+    unknown = set(values) - set(HOST_KEYS)
+    if unknown:
+        raise RegistryError(f"unknown host setting(s): {', '.join(sorted(unknown))}")
+    yaml = _yaml("rt")
+    data = None
+    if HOST_CONFIG.exists():
+        try:
+            data = yaml.load(HOST_CONFIG.read_text())
+        except YAMLError as err:
+            raise RegistryError(f"{HOST_CONFIG}: not valid YAML ({err})") from err
+        if data is not None and not isinstance(data, dict):
+            raise RegistryError(f"{HOST_CONFIG}: expected a mapping at the top level")
+    if data is None:
+        data = yaml.load("global: {}\n")
+    if data.get("global") is None:
+        data["global"] = {}
+    for key, value in values.items():
+        data["global"][key] = value
+    out = StringIO()
+    yaml.dump(data, out)
+    _atomic_write(HOST_CONFIG, out.getvalue())
+    return HOST_CONFIG
+
+
+def seed_path_cache(paths: dict[str, Path]) -> None:
+    """Record known clones (normalized remote → path) in the path cache, keeping the rest."""
+    cache = _load_cache()
+    for remote, path in paths.items():
+        cache["paths"][remote] = str(path)
+    _save_cache(cache)
 
 
 def _atomic_write(path: Path, content: str) -> None:

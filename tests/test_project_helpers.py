@@ -1,6 +1,6 @@
 """Tests for pure helpers in project.py.
 
-Covers cadence parsing and repos config round-trip — the pieces with
+Covers cadence parsing and init-project's registry writes — the pieces with
 real logic. Does NOT test cmd_init_project (heavy subprocess mocking;
 deferred to a follow-up bead).
 """
@@ -8,23 +8,22 @@ deferred to a follow-up bead).
 from __future__ import annotations
 
 import datetime as dt
+import subprocess
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
 from bd_track.project import (
     _INTERVAL_ALIASES,
     _ensure_auto_push_disabled,
-    _get_repo_entry,
-    load_repos_config,
+    _registry_target,
     parse_cadence,
-    save_repos_config,
 )
 
 # ---------------------------------------------------------------------------
 # parse_cadence
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.parametrize(
     "spec, expected",
@@ -53,69 +52,82 @@ def test_interval_aliases_resolvable():
 
 
 # ---------------------------------------------------------------------------
-# repos config round-trip
+# registry target + registration (init-project's writes, bd-timew-d0t.4)
 # ---------------------------------------------------------------------------
+
 
 @pytest.fixture
-def patched_config_path(tmp_path: Path):
-    """Redirect REPOS_CONFIG to a tmp file for the duration of the test."""
-    config_file = tmp_path / "repos.yaml"
-    with patch("bd_track.project.REPOS_CONFIG", config_file), \
-         patch("bd_track.util.REPOS_CONFIG", config_file):
-        yield config_file
+def reg_home(tmp_path: Path, monkeypatch) -> Path:
+    from bd_track import registry
+
+    monkeypatch.delenv("BD_TRACK_REGISTRY", raising=False)
+    monkeypatch.delenv("BD_TRACK_SCAN_ROOTS", raising=False)
+    monkeypatch.setattr(registry, "DEFAULT_REGISTRY", tmp_path / "projects.yaml")
+    monkeypatch.setattr(registry, "REPOS_CONFIG", tmp_path / "repos.yaml")
+    monkeypatch.setattr(registry, "HOST_CONFIG", tmp_path / "config.yaml")
+    monkeypatch.setattr(registry, "PATH_CACHE", tmp_path / "paths.json")
+    return tmp_path
 
 
-def test_load_missing_config_returns_skeleton(patched_config_path):
-    data = load_repos_config()
-    assert data == {
-        "global": {"defaults": {"statuses": [], "hooks": []}},
-        "repos": [],
-    }
+def _git(path: Path, origin: str | None = None) -> Path:
+    path.mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(path)], check=True)
+    if origin:
+        subprocess.run(["git", "-C", str(path), "remote", "add", "origin", origin], check=True)
+    return path
 
 
-def test_save_then_load_round_trip(patched_config_path):
-    data = {
-        "global": {"defaults": {"statuses": ["review"], "hooks": []}, "idle_stop_hours": 4},
-        "repos": [
-            {"path": "/home/x/proj1", "commit_cadence": "1d", "compact_days": 7,
-             "statuses": [], "server": {"enabled": True, "pass_path": "beads/proj1",
-                                        "dolt_user": "proj1"}},
-        ],
-    }
-    save_repos_config(data)
-    loaded = load_repos_config()
-    assert loaded == data
+def test_registry_target_new_existing_and_clashes(reg_home: Path):
+    from bd_track import registry
+
+    clone = _git(reg_home / "src" / "MyTool", "git@github.com:me/mytool.git")
+    assert _registry_target(clone, None) == ("mytool", None)
+    assert _registry_target(clone, "tool")[0] == "tool"
+    registry.DEFAULT_REGISTRY.write_text(
+        "projects:\n  tool:\n    remote: me/mytool\n  mytool:\n    remote: me/other\n"
+    )
+    name, existing = _registry_target(clone, None)
+    assert name == "tool" and existing is not None  # found by remote
+    with pytest.raises(SystemExit, match="already registered as 'tool'"):
+        _registry_target(clone, "renamed")
+    other = _git(reg_home / "src" / "mytool2", "git@github.com:me/x.git")
+    with pytest.raises(SystemExit, match="taken by another project"):
+        _registry_target(other, "mytool")
+    with pytest.raises(SystemExit, match="not a valid project name"):
+        _registry_target(other, "Bad Name")
 
 
-def test_load_supplies_missing_global_defaults(patched_config_path):
-    """A config file with only `repos:` should round-trip with defaults filled in."""
-    patched_config_path.write_text("repos: []\n")
-    data = load_repos_config()
-    assert data["global"]["defaults"]["statuses"] == []
-    assert data["global"]["defaults"]["hooks"] == []
+def test_register_writes_identity_and_beads_keys(reg_home: Path, monkeypatch):
+    from bd_track import project, registry
+
+    monkeypatch.setattr(project, "_issue_prefix", lambda root: "mt")
+    clone = _git(reg_home / "src" / "mytool", "git@github.com:me/mytool.git")
+    project._register(clone, "mytool", {"commit_cadence": "1d", "server": None}, prefix=None)
+    entry = registry.load_registry(scan=False).get("mytool")
+    assert entry.remote == "me/mytool" and entry.path is None
+    assert entry.beads == {"prefix": "mt", "commit_cadence": "1d"}
+    project._register(
+        clone, "mytool", {"commit_cadence": "12h", "server": {"enabled": True}}, prefix="zz"
+    )
+    project._register(clone, "mytool", {"server": None}, prefix=None)
+    entry = registry.load_registry(scan=False).get("mytool")
+    assert entry.beads == {"prefix": "mt", "commit_cadence": "12h"}  # prefix kept, server removed
 
 
-# ---------------------------------------------------------------------------
-# _get_repo_entry
-# ---------------------------------------------------------------------------
+def test_register_without_remote_writes_home_relative_path(reg_home: Path, monkeypatch):
+    from bd_track import project, registry
 
-def test_get_repo_entry_finds_by_path():
-    config = {"repos": [{"path": "/a"}, {"path": "/b"}]}
-    assert _get_repo_entry(config, "/b") == {"path": "/b"}
-
-
-def test_get_repo_entry_returns_none_when_absent():
-    config = {"repos": [{"path": "/a"}]}
-    assert _get_repo_entry(config, "/missing") is None
-
-
-def test_get_repo_entry_handles_empty_repos():
-    assert _get_repo_entry({"repos": []}, "/anything") is None
+    monkeypatch.setattr(project, "_issue_prefix", lambda root: None)
+    monkeypatch.setattr(Path, "home", lambda: reg_home)
+    clone = _git(reg_home / "src" / "local")
+    project._register(clone, "local", {"compact_days": 3}, prefix=None)
+    assert "path: ~/src/local" in registry.DEFAULT_REGISTRY.read_text()
 
 
 # ---------------------------------------------------------------------------
 # _ensure_auto_push_disabled (PROJ-i85 / pitfalls-beads-dolt-remote)
 # ---------------------------------------------------------------------------
+
 
 def test_ensure_auto_push_disabled_creates_nested_when_empty(tmp_path):
     beads = tmp_path / ".beads"

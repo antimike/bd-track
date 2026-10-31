@@ -170,6 +170,10 @@ to write):
   preserving the historical timestamps, skipping open and bead-less intervals, and
   deduplicating by a content-hash `import_key` (so re-runs are safe). `--from-file`
   imports from a saved export instead of invoking `timew`.
+- **`bd-track migrate registry`** moves `~/.config/bd-track/repos.yaml` into the
+  shared project registry `~/.config/projects.yaml` (and its `global:` block into
+  `~/.config/bd-track/config.yaml` if that file is missing), then renames it to
+  `repos.yaml.migrated`. See [docs/registry-schema.md](docs/registry-schema.md).
 
 ## Per-project sidecar (`.beads/bd-track.yaml`)
 
