@@ -60,7 +60,7 @@ you run `bd-track migrate rename`.
 ## Install
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/AudensAurantius/bd-timew/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/antimike/bd-track/main/install.sh | sh
 ```
 
 Timewarrior is **no longer a dependency** (removed in 0.5.0). The installer pulls
@@ -69,7 +69,7 @@ Timewarrior is **no longer a dependency** (removed in 0.5.0). The installer pull
 Manual install (if you already have `bd` and `pipx`):
 
 ```bash
-pipx install git+https://github.com/AudensAurantius/bd-timew.git
+pipx install git+https://github.com/antimike/bd-track.git
 ```
 
 > The GitHub repository is still named `bd-timew`; only the installed package,

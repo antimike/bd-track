@@ -39,9 +39,9 @@ bd-track = "bd_track.cli:main"
 bd-timew = "bd_track.cli:main_deprecated"
 
 [project.urls]
-Homepage = "https://github.com/AudensAurantius/bd-track"
-Repository = "https://github.com/AudensAurantius/bd-track"
-Issues = "https://github.com/AudensAurantius/bd-track/issues"
+Homepage = "https://github.com/antimike/bd-track"
+Repository = "https://github.com/antimike/bd-track"
+Issues = "https://github.com/antimike/bd-track/issues"
 
 [dependency-groups]
 dev = [

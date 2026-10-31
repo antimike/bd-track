@@ -42,6 +42,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   and `queue prune` still treat deferred as stale (`bd-timew-eue`).
 - `bd-track queue prune` no longer proposes `add-before` for a queued bead's
   parent epic; only blocking dependency edges imply ordering (`bd-timew-ctp`).
+- Repository links in `pyproject.toml`, the README install commands and this
+  changelog point at `antimike/bd-track` (they named an old account and the
+  pre-rename `bd-timew` repo).
 
 ## [0.5.1] - 2026-10-14
 
@@ -250,11 +253,11 @@ time-tracking workflow into a multi-module Python package.
   v0.2.0.
 - systemd user units for cleanup and idle-stop timers.
 
-[Unreleased]: https://github.com/AudensAurantius/bd-timew/compare/v0.6.0...HEAD
-[0.6.0]: https://github.com/AudensAurantius/bd-timew/compare/v0.5.1...v0.6.0
-[0.5.1]: https://github.com/AudensAurantius/bd-timew/compare/v0.5.0...v0.5.1
-[0.5.0]: https://github.com/AudensAurantius/bd-timew/compare/v0.4.0...v0.5.0
-[0.4.0]: https://github.com/AudensAurantius/bd-timew/compare/v0.3.0...v0.4.0
-[0.3.0]: https://github.com/AudensAurantius/bd-timew/compare/v0.2.0...v0.3.0
-[0.2.0]: https://github.com/AudensAurantius/bd-timew/compare/v0.1.0...v0.2.0
-[0.1.0]: https://github.com/AudensAurantius/bd-timew/releases/tag/v0.1.0
+[Unreleased]: https://github.com/antimike/bd-track/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/antimike/bd-track/compare/v0.5.1...v0.6.0
+[0.5.1]: https://github.com/antimike/bd-track/compare/v0.5.0...v0.5.1
+[0.5.0]: https://github.com/antimike/bd-track/compare/v0.4.0...v0.5.0
+[0.4.0]: https://github.com/antimike/bd-track/compare/v0.3.0...v0.4.0
+[0.3.0]: https://github.com/antimike/bd-track/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/antimike/bd-track/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/antimike/bd-track/releases/tag/v0.1.0
