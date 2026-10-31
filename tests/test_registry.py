@@ -510,3 +510,128 @@ def test_resolve_project_dir_forces_scan_on_miss(home: Path, tmp_path: Path, mon
     load_registry()  # stamps scanned_at: the TTL alone would skip the next scan
     clone = _clone(tmp_path / "src" / "tool", "git@github.com:me/tool.git")
     assert resolve_project_dir("tool") == clone.resolve()
+
+
+# ---------------------------------------------------------------------------
+# set_host, set_project deletes, migrate registry (d0t.4)
+# ---------------------------------------------------------------------------
+
+
+def test_set_host_round_trips(home: Path):
+    registry.HOST_CONFIG.write_text("# mine\nglobal:\n  dolt_push: never  # WSL\n")
+    registry.set_host({"idle_stop_hours": 2})
+    text = registry.HOST_CONFIG.read_text()
+    assert text.startswith("# mine\n") and "dolt_push: never  # WSL" in text
+    assert load_host_config()["idle_stop_hours"] == 2
+    with pytest.raises(RegistryError, match="unknown host setting"):
+        registry.set_host({"colour": "red"})
+
+
+def test_set_host_creates_file(home: Path):
+    registry.set_host({"check_interval": "weekly"})
+    assert load_host_config()["check_interval"] == "weekly"
+
+
+def test_set_project_none_removes_owned_key(home: Path):
+    registry.DEFAULT_REGISTRY.write_text(REGISTRY_TEXT)
+    set_project("amontillado", {"beads": {"server": {"enabled": True}, "compact_days": 3}})
+    set_project("amontillado", {"beads": {"server": None}})
+    assert load_registry().get("amontillado").beads == {"prefix": "amo", "compact_days": 3}
+
+
+@pytest.fixture
+def legacy_setup(home: Path, tmp_path: Path, monkeypatch) -> dict[str, Path]:
+    from bd_track import project
+
+    prefixes = {"newtool": "nt", "scratch": "sc", "docs": "dc"}
+    monkeypatch.setattr(project, "_issue_prefix", lambda root: prefixes.get(root.name))
+    chz = _clone(
+        tmp_path / "share" / "chezmoi", "git@alias.github.com:antimike/chezmoi-dotfiles.git"
+    )
+    new = _clone(tmp_path / "src" / "newtool", "git@github.com:me/newtool.git")
+    bare = _clone(tmp_path / "src" / "scratch", None)
+    taken = _clone(tmp_path / "src" / "docs", "git@github.com:me/docs-fork.git")
+    registry.DEFAULT_REGISTRY.write_text(
+        "# seeded\n"
+        "projects:\n"
+        "  chezmoi:\n    remote: antimike/chezmoi-dotfiles\n"
+        "    beads: { prefix: chz, compact_days: 3 }\n"
+        "  docs:\n    remote: me/docs\n"
+    )
+    registry.REPOS_CONFIG.write_text(
+        "global: {check_interval: daily, idle_stop_hours: 4}\n"
+        "repos:\n"
+        f"- path: {chz}\n  commit_cadence: 1d\n  compact_days: 7\n"
+        f"- path: {new}\n  commit_cadence: 2d\n"
+        f"- path: {bare}\n  compact_days: 5\n"
+        f"- path: {taken}\n"
+    )
+    return {"chz": chz, "new": new, "bare": bare, "taken": taken}
+
+
+def test_migrate_dry_run_writes_nothing(legacy_setup, home: Path, capsys):
+    from bd_track.migrate import cmd_migrate_registry
+
+    before = registry.DEFAULT_REGISTRY.read_text()
+    cmd_migrate_registry()
+    out = capsys.readouterr().out
+    assert "DRY RUN" in out and "chezmoi: merge into existing" in out
+    assert "SKIP" in out and "'docs' is taken" in out
+    assert registry.DEFAULT_REGISTRY.read_text() == before
+    assert registry.REPOS_CONFIG.exists() and not registry.HOST_CONFIG.exists()
+
+
+def test_migrate_apply_with_skip_keeps_repos_yaml(legacy_setup, home: Path):
+    from bd_track.migrate import cmd_migrate_registry
+
+    cmd_migrate_registry(apply=True)
+    reg = load_registry(scan=False)
+    assert reg.get("chezmoi").beads == {"prefix": "chz", "compact_days": 3, "commit_cadence": "1d"}
+    assert reg.get("newtool").remote == "me/newtool"
+    assert reg.get("scratch").beads == {"prefix": "sc", "compact_days": 5}
+    assert "# seeded" in registry.DEFAULT_REGISTRY.read_text()
+    assert registry.REPOS_CONFIG.exists()  # 'docs' entry could not move
+    assert load_host_config()["idle_stop_hours"] == 4
+
+
+def test_migrate_apply_renames_and_keeps_resolution(legacy_setup, home: Path):
+    from bd_track.migrate import cmd_migrate_registry
+
+    registry.REPOS_CONFIG.write_text(
+        registry.REPOS_CONFIG.read_text().replace(f"- path: {legacy_setup['taken']}\n", "")
+    )
+
+    def view() -> dict:
+        return {
+            p.name: (p.path, {k: v for k, v in p.beads.items() if k != "prefix"})
+            for p in load_registry(scan=False).beads_projects()
+        }
+
+    before = view()
+    cmd_migrate_registry(apply=True)
+    assert not registry.REPOS_CONFIG.exists()
+    assert registry.REPOS_CONFIG.with_name("repos.yaml.migrated").exists()
+    assert view() == before  # no scan roots: the seeded cache keeps every clone resolving
+    cmd_migrate_registry(apply=True)  # second run: nothing to migrate
+
+
+def test_migrate_never_overwrites_host_config(legacy_setup, home: Path):
+    from bd_track.migrate import cmd_migrate_registry
+
+    registry.HOST_CONFIG.write_text("global: {idle_stop_hours: 9}\n")
+    cmd_migrate_registry(apply=True)
+    assert load_host_config()["idle_stop_hours"] == 9
+
+
+def test_migrate_skips_entry_without_prefix(legacy_setup, home: Path, monkeypatch, capsys):
+    from bd_track import project
+    from bd_track.migrate import cmd_migrate_registry
+
+    registry.REPOS_CONFIG.write_text(
+        registry.REPOS_CONFIG.read_text().replace(f"- path: {legacy_setup['taken']}\n", "")
+    )
+    monkeypatch.setattr(project, "_issue_prefix", lambda root: None)
+    cmd_migrate_registry(apply=True)
+    assert "could not read its beads prefix" in capsys.readouterr().out
+    assert registry.REPOS_CONFIG.exists()
+    assert load_registry(scan=False).get("chezmoi").beads["commit_cadence"] == "1d"  # has prefix
