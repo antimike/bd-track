@@ -32,6 +32,69 @@ Resolution order for billing tuple (first match wins):
 """
 
 
+def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
+    """Attach the ``triage <action>`` parser tree (the beads layer over a ticket inbox)."""
+    p_triage = sub.add_parser(
+        "triage",
+        help="Turn a project's ticket inbox into beads (resolve).",
+        description=(
+            "Work a project's ticket inbox: <inbox>/triage/*.md files and "
+            "<inbox>/triage/inbox.md paragraphs. The inbox is --inbox, else "
+            "$BD_TRACK_INBOX_ROOT/<project>, else $XDG_STATE_HOME/triage/<project> "
+            "(~/.local/state/triage/<project>), where <project> is the basename of "
+            "--project-dir or of the current git repository. See docs/triage.md."
+        ),
+        formatter_class=HelpFormatter,
+    )
+    tsub = p_triage.add_subparsers(dest="triage_action", required=True,
+                                   title="triage actions", metavar="<action>")
+
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
+        "--inbox", type=Path, default=None,
+        help="The project's inbox directory (holds triage/ and done/).",
+    )
+    common.add_argument(
+        "--project-dir", type=Path, default=None,
+        help="Project root; names the inbox and is where beads are created. "
+             "Defaults to the current git repository.",
+    )
+
+    p_resolve = tsub.add_parser(
+        "resolve", parents=[common],
+        help="Record a decision on one ticket and move it to done/.",
+        description=(
+            "Resolve one open ticket: --bead creates a bead (label triage) and records "
+            "'status: accepted, outcome: bead <id>'; --reject, --duplicate and --done "
+            "record the decision only. The ticket then moves to done/ (a quick note "
+            "becomes its own done/<date>-<slug>.md and leaves inbox.md)."
+        ),
+        formatter_class=HelpFormatter,
+    )
+    p_resolve.add_argument("ticket_id", metavar="<ticket>",
+                           help="Ticket id: a file name (with or without .md) or inbox-<hash>.")
+    action = p_resolve.add_mutually_exclusive_group(required=True)
+    action.add_argument("--bead", action="store_true",
+                        help="Accept: create a bead from the ticket.")
+    action.add_argument("--reject", metavar="REASON", help="Reject, with a one-line reason.")
+    action.add_argument("--duplicate", metavar="ID",
+                        help="Duplicate of a bead, ticket or doc.")
+    action.add_argument("--done", metavar="OUTCOME",
+                        help="Handled without a bead (e.g. a doc change); say where.")
+    bead_opts = p_resolve.add_argument_group("bead options (with --bead)")
+    bead_opts.add_argument("--title", default=None,
+                           help="Bead title (default: the ticket's title).")
+    bead_opts.add_argument("--description", default=None,
+                           help="Bead description (default: the ticket's body). A "
+                                "'ticket: done/<file>' line is always appended.")
+    bead_opts.add_argument("--type", dest="bead_type", default=None,
+                           help="Bead type (default: from the ticket type; idea/question -> task).")
+    bead_opts.add_argument("--priority", type=int, choices=range(5), default=None,
+                           help="Bead priority 0-4 (default: urgency high/normal/low -> 1/2/3).")
+    p_resolve.add_argument("--dry-run", action="store_true",
+                           help="Print what would happen without writing anything.")
+
+
 def _add_queue_parsers(sub: argparse._SubParsersAction) -> None:
     """Attach the unified ``queue <action>`` parser tree.
 
@@ -659,6 +722,9 @@ def get_cli_arguments() -> argparse.Namespace:
     # -- queue (parent) + push/unshift/pop/peek/list/remove/clear/clean/generate/prune
     _add_queue_parsers(sub)
 
+    # -- triage (parent) + resolve
+    _add_triage_parsers(sub)
+
     return parser.parse_args()
 
 
@@ -866,3 +932,16 @@ def main() -> None:
             )
     elif args.cmd == "queue":
         _dispatch_queue(args)
+    elif args.cmd == "triage":
+        if args.triage_action == "resolve":
+            from bd_track.triage import cmd_triage_resolve
+            if (args.title or args.description or args.bead_type
+                    or args.priority is not None) and not args.bead:
+                sys.exit("bd-track: --title/--description/--type/--priority need --bead")
+            cmd_triage_resolve(
+                args.ticket_id, bead=args.bead, reject=args.reject,
+                duplicate=args.duplicate, done=args.done, title=args.title,
+                description=args.description, bead_type=args.bead_type,
+                priority=args.priority, inbox=args.inbox,
+                project_dir=args.project_dir, dry_run=args.dry_run,
+            )
