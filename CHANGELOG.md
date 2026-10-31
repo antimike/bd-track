@@ -6,6 +6,8 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-30
+
 ### Added
 
 - **`bd-track migrate registry`** (`bd-timew-d0t.4`): moves `repos.yaml`'s projects
@@ -13,7 +15,6 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   clone; clone paths seeded into the path cache), copies its `global:` block into
   `~/.config/bd-track/config.yaml` when that file is missing, and renames it to
   `repos.yaml.migrated` once every entry has moved. Dry-run by default.
-
 - Registry projects with a `remote` but no `path` are found on disk by scanning the
   host's `global.scan_roots` (or `$BD_TRACK_SCAN_ROOTS`) for a clone whose `origin`
   matches; results are cached in `~/.cache/bd-track/registry-paths.json`. No roots, no
@@ -26,6 +27,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `path`; `beads.prefix` and its settings) instead of `repos.yaml`, and records
   `idle_stop_hours`/`check_interval` in `~/.config/bd-track/config.yaml`. New `--name`
   for a project whose basename is taken (`bd-timew-d0t.4`).
+- **Upgrading:** run `bd-track migrate registry` (dry run), then `--apply`, once per
+  host that still has `~/.config/bd-track/repos.yaml`; until then it keeps being read
+  alongside the registry.
 
 ## [0.6.0] - 2026-10-30
 
@@ -274,7 +278,8 @@ time-tracking workflow into a multi-module Python package.
   v0.2.0.
 - systemd user units for cleanup and idle-stop timers.
 
-[Unreleased]: https://github.com/antimike/bd-track/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/antimike/bd-track/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/antimike/bd-track/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/antimike/bd-track/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/antimike/bd-track/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/antimike/bd-track/compare/v0.4.0...v0.5.0
