@@ -195,15 +195,21 @@ def resolve_project_dir(slug_or_path: str) -> Path:
     """Resolve ``--project <name-or-path>`` to a project root via the registry.
 
     Matches a registry name, a path basename (legacy repos.yaml names), or the path itself.
+    A registered name whose clone is not known yet forces a fresh scan of the scan roots.
     """
     from bd_track.registry import load_registry_or_exit
 
-    registry = load_registry_or_exit()
-    known = [p for p in registry.projects.values() if p.path is not None]
     candidate = Path(slug_or_path).expanduser()
-    for project in known:
-        if slug_or_path in (project.name, project.path.name) or project.path == candidate:
-            return project.path
+    registry = load_registry_or_exit()
+    for attempt in (1, 2):
+        known = [p for p in registry.projects.values() if p.path is not None]
+        for project in known:
+            if slug_or_path in (project.name, project.path.name) or project.path == candidate:
+                return project.path
+        pending = registry.get(slug_or_path)
+        if attempt == 2 or pending is None or pending.remote is None:
+            break
+        registry = load_registry_or_exit(scan=True)
     names = ", ".join(p.name for p in known)
     sys.exit(
         f"bd-track: --project {slug_or_path!r} not found in the project registry"
