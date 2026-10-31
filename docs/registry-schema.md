@@ -131,19 +131,27 @@ bd-track writes the registry in place (`init-project`, `migrate`):
 ## Legacy `repos.yaml`
 
 `~/.config/bd-track/repos.yaml` (a `repos:` list keyed by absolute `path`, plus `global:`) stays
-readable until `bd-timew-d0t.4` migrates it:
+readable until `bd-track migrate registry --apply` moves it (`bd-timew-d0t.4`; a dry run by
+default):
 
 | `repos.yaml` | Registry |
 |---|---|
-| `repos[].path` | project name = path basename; `remote` from the clone's `origin`; `path` kept only when there is no remote |
+| `repos[].path` | project name = path basename (or the existing project with that path, or the path-less one whose `remote` matches the clone's `origin`); `remote` from the clone's `origin`; `path` kept only when there is no remote. The clone's path goes into the path cache, so it resolves without a scan. |
+| (registration) | `beads.prefix` read from the clone (`bd config get issue_prefix`); an entry whose prefix cannot be read is skipped |
 | `repos[].commit_cadence`, `compact_days`, `statuses`, `server` | `beads.` same key |
-| `global:` | `~/.config/bd-track/config.yaml` `global:` |
+| `global:` | `~/.config/bd-track/config.yaml` `global:`, only when that file does not exist yet |
+
+Registry values win: a project that already sets a key keeps it. When every entry has moved,
+`repos.yaml` is renamed to `repos.yaml.migrated` (rename it back to undo); if any entry was
+skipped (name taken, no prefix) it stays, and the bridge below keeps covering it. Since
+`bd-timew-d0t.4`, `init-project` writes the registry (and its host keys `idle_stop_hours` and
+`check_interval` to `config.yaml`), never `repos.yaml`; `--name` names a new project when its
+basename is taken.
 
 `--project <slug>` keeps matching a legacy path basename.
 
-**Bridge while both files exist.** Until the migration, `init-project` still writes `repos.yaml`,
-and a registry may list a project by `remote` only, with no way yet to find its clone
-(`bd-timew-d0t.3`). So when the registry in use is not `repos.yaml` itself and `repos.yaml` also
+**Bridge while both files exist.** Until the migration, a registry may list a project by
+`remote` only while `repos.yaml` still knows its clone. So when the registry in use is not `repos.yaml` itself and `repos.yaml` also
 exists, bd-track reads both. Each `repos.yaml` entry completes the registry project with the same
 `path`, else the path-less project whose `remote` matches the clone's `origin`: it supplies the
 `path` and any `beads.` key the registry does not set (the registry wins). An entry that matches
@@ -166,5 +174,6 @@ implement.
 | 2026-10-30 | bd-track writes the registry in place with `ruamel.yaml` (new dependency), atomically. |
 | 2026-10-30 | bd-track is agnostic about how the file is managed or shared (no dotfiles-manager detection or hints); managers must merge, not overwrite. Projects may be registered on all hosts or only some. |
 | 2026-10-30 | While `repos.yaml` still exists, bd-track reads it alongside the registry and lets it fill in paths and bd-track settings ([bridge](#legacy-reposyaml)); `bd-timew-d0t.4`'s migration retires it. Chosen over switching outright (cleanup would lose path-less projects) or deferring the switch (`bd-timew-d0t.2`, MH). |
+| 2026-10-30 | `migrate registry --apply` renames `repos.yaml` to `repos.yaml.migrated` once every entry has moved; it copies `global:` to `config.yaml` only when that file is missing; `init-project` records its host keys in `config.yaml` (round-trip). Migrated projects get `beads.prefix` from the clone, and their paths are seeded into the path cache (`bd-timew-d0t.4`, MH). |
 | 2026-10-30 | Scan roots come from `global.scan_roots` or `$BD_TRACK_SCAN_ROOTS`, with no default (no scan unless configured); two or more clones of a remote resolve to none, with a warning; every beads project with a known clone is a cleanup target (`bd-timew-d0t.3`, MH). |
 | 2026-10-30 | `global.dolt_push` takes `always`/`never` (force) or `true`/`false` (default, overridden per project). Supersedes `bd-timew-ayn.4`'s "per-project override" wording. |

@@ -8,11 +8,24 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- **`bd-track migrate registry`** (`bd-timew-d0t.4`): moves `repos.yaml`'s projects
+  into `~/.config/projects.yaml` (registry values win; `beads.prefix` read from each
+  clone; clone paths seeded into the path cache), copies its `global:` block into
+  `~/.config/bd-track/config.yaml` when that file is missing, and renames it to
+  `repos.yaml.migrated` once every entry has moved. Dry-run by default.
+
 - Registry projects with a `remote` but no `path` are found on disk by scanning the
   host's `global.scan_roots` (or `$BD_TRACK_SCAN_ROOTS`) for a clone whose `origin`
   matches; results are cached in `~/.cache/bd-track/registry-paths.json`. No roots, no
   scan. Two or more clones of a remote are reported and left unresolved. Such projects
   become cleanup, `--project` and `--global` targets (`bd-timew-d0t.3`).
+
+### Changed
+
+- `init-project` registers the project in the registry (`remote` from `origin`, else
+  `path`; `beads.prefix` and its settings) instead of `repos.yaml`, and records
+  `idle_stop_hours`/`check_interval` in `~/.config/bd-track/config.yaml`. New `--name`
+  for a project whose basename is taken (`bd-timew-d0t.4`).
 
 ## [0.6.0] - 2026-10-30
 
