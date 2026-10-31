@@ -36,7 +36,7 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
     """Attach the ``triage <action>`` parser tree (the beads layer over a ticket inbox)."""
     p_triage = sub.add_parser(
         "triage",
-        help="Turn a project's ticket inbox into beads (resolve).",
+        help="Turn a project's ticket inbox into beads (list, resolve).",
         description=(
             "Work a project's ticket inbox: <inbox>/triage/*.md files and "
             "<inbox>/triage/inbox.md paragraphs. The inbox is --inbox, else "
@@ -59,6 +59,21 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
         help="Project root; names the inbox and is where beads are created. "
              "Defaults to the current git repository.",
     )
+
+    p_list = tsub.add_parser(
+        "list", parents=[common],
+        help="List the open tickets in the inbox.",
+        description=(
+            "List open tickets: files in triage/ (name order), then inbox.md "
+            "paragraphs. Columns: id, date, from, type/urgency, title. --json prints "
+            "{inbox, tickets: [{id, path, source, kind, title, from, date, type, "
+            "urgency, status, meta, body}]}; type and urgency are null unless "
+            "recognised, and meta holds the raw frontmatter."
+        ),
+        formatter_class=HelpFormatter,
+    )
+    p_list.add_argument("--json", action="store_true", dest="as_json",
+                        help="Print JSON (the contract for scripts and agents).")
 
     p_resolve = tsub.add_parser(
         "resolve", parents=[common],
@@ -933,7 +948,11 @@ def main() -> None:
     elif args.cmd == "queue":
         _dispatch_queue(args)
     elif args.cmd == "triage":
-        if args.triage_action == "resolve":
+        if args.triage_action == "list":
+            from bd_track.triage import cmd_triage_list
+            cmd_triage_list(inbox=args.inbox, project_dir=args.project_dir,
+                            as_json=args.as_json)
+        elif args.triage_action == "resolve":
             from bd_track.triage import cmd_triage_resolve
             if (args.title or args.description or args.bead_type
                     or args.priority is not None) and not args.bead:
