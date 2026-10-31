@@ -12,6 +12,8 @@ from unittest.mock import patch
 import pytest
 
 from bd_track.triage import (
+    cmd_triage_ask,
+    cmd_triage_interactive,
     cmd_triage_list,
     cmd_triage_resolve,
     find_inbox,
@@ -19,6 +21,7 @@ from bd_track.triage import (
     parse_note,
     parse_notes,
     read_inbox,
+    run_interactive,
     set_frontmatter,
     split_frontmatter,
 )
@@ -478,3 +481,131 @@ def test_list_empty_inbox(tmp_path: Path, capsys):
     assert capsys.readouterr().out == ""
     cmd_triage_list(inbox=tmp_path, as_json=True)
     assert json.loads(capsys.readouterr().out)["tickets"] == []
+
+
+# ---------------------------------------------------------------------------
+# ask
+# ---------------------------------------------------------------------------
+
+
+def test_ask_file_appends_section_and_stays_open(inbox: Path):
+    cmd_triage_ask("heading-only", "Which bar? (MH)", inbox=inbox)
+    text = (inbox / "triage" / "heading-only.md").read_text()
+    assert text.endswith(f"Body.\n\n## Triage {dt.date.today().isoformat()}\n\nWhich bar? (MH)\n")
+    assert "heading-only" in [t.id for t in read_inbox(inbox)]
+
+
+def test_ask_note_promotes_to_file(inbox: Path):
+    note = parse_notes(inbox / "triage" / "inbox.md")[0]
+    cmd_triage_ask(note.id, "repro steps?", inbox=inbox)
+    promoted = inbox / "triage" / "2026-10-30-waybar-clock-drifts-after-resume.md"
+    meta, body = split_frontmatter(promoted.read_text())
+    assert meta == {
+        "from": "MH",
+        "date": "2026-10-30",
+        "type": "bug",
+        "urgency": "high",
+        "status": "open",
+    }
+    assert body.startswith("waybar clock drifts after resume?\n\n## Triage ")
+    assert note.id not in [t.id for t in parse_notes(inbox / "triage" / "inbox.md")]
+    assert promoted.stem in [t.id for t in read_inbox(inbox)]
+
+
+def test_ask_dry_run_writes_nothing(inbox: Path, capsys):
+    before = {p: p.read_bytes() for p in inbox.rglob("*") if p.is_file()}
+    cmd_triage_ask("heading-only", "q", inbox=inbox, dry_run=True)
+    cmd_triage_ask(parse_notes(inbox / "triage" / "inbox.md")[0].id, "q", inbox=inbox, dry_run=True)
+    assert {p: p.read_bytes() for p in inbox.rglob("*") if p.is_file()} == before
+    assert "promote it to its own file" in capsys.readouterr().out
+
+
+# ---------------------------------------------------------------------------
+# interactive loop
+# ---------------------------------------------------------------------------
+
+
+def _scripted(answers: list[str]):
+    """An ``ask`` stand-in that returns ``answers`` in order and records each prompt."""
+    prompts: list[str] = []
+    queue = iter(answers)
+
+    def ask(message: str, *, choices=None, default=None) -> str:
+        prompts.append(message)
+        answer = next(queue)
+        if choices is not None:
+            assert answer in choices
+        return answer
+
+    return ask, prompts
+
+
+def test_interactive_walks_and_acts(inbox: Path):
+    ask, _ = _scripted(
+        [
+            "r",
+            "not ours",  # 2026-10-29-structured
+            "s",  # empty
+            "d",
+            "bd-timew-abc",  # freeform-oneline
+            "k",
+            "which bar?",  # heading-only
+            "a",
+            "Malformed ticket",
+            "bug",
+            "1",  # malformed-frontmatter
+            "q",
+        ]
+    )
+    with patch("bd_track.triage.subprocess.run", return_value=_bd_ok()) as run:
+        counts = run_interactive(inbox, project_dir=inbox, dry_run=False, ask=ask)
+    assert counts == {"accept": 1, "reject": 1, "duplicate": 1, "skip": 1, "ask": 1}
+    done = {p.name: split_frontmatter(p.read_text())[0] for p in (inbox / "done").glob("*.md")}
+    assert done["2026-10-29-structured.md"]["status"] == "rejected"
+    assert done["freeform-oneline.md"]["outcome"] == "duplicate of bd-timew-abc"
+    assert done["malformed-frontmatter.md"]["outcome"] == "bead bd-x-1"
+    opts = _opts(run.call_args.args[0])
+    assert (opts["--title"], opts["--type"], opts["--priority"]) == ("Malformed ticket", "bug", "1")
+    assert "## Triage" in (inbox / "triage" / "heading-only.md").read_text()
+    assert (inbox / "triage" / "empty.md").exists()
+
+
+def test_interactive_note_ids_stay_current(inbox: Path):
+    (inbox / "triage").joinpath("inbox.md").write_text("same\n\nsame\n\nother\n")
+    for path in (inbox / "triage").glob("*.md"):
+        if path.name != "inbox.md":
+            path.unlink()
+    ask, _ = _scripted(["r", "x", "r", "y", "s"])
+    counts = run_interactive(inbox, project_dir=inbox, dry_run=False, ask=ask)
+    assert counts["reject"] == 2 and counts["skip"] == 1
+    assert [t.body for t in read_inbox(inbox)] == ["other"]
+
+
+def test_interactive_ask_on_note_does_not_repeat(inbox: Path):
+    (inbox / "triage").joinpath("inbox.md").write_text("only note\n")
+    for path in (inbox / "triage").glob("*.md"):
+        if path.name != "inbox.md":
+            path.unlink()
+    ask, _ = _scripted(["k", "why?"])  # a repeat would exhaust the script
+    counts = run_interactive(inbox, project_dir=inbox, dry_run=False, ask=ask)
+    assert counts["ask"] == 1
+    assert [t.id for t in read_inbox(inbox)] == [f"{dt.date.today().isoformat()}-only-note"]
+
+
+def test_interactive_dry_run_writes_nothing_and_ends(inbox: Path, capsys):
+    before = {p: p.read_bytes() for p in inbox.rglob("*") if p.is_file()}
+    ask, _ = _scripted(["r", "x", "a", "T", "task", "2", "k", "q?"] + ["s"] * 9)
+    with patch("bd_track.triage.subprocess.run") as run:
+        counts = run_interactive(inbox, project_dir=inbox, dry_run=True, ask=ask)
+    run.assert_not_called()
+    assert sum(counts.values()) == 12  # every open ticket shown once, then the loop ends
+    assert {p: p.read_bytes() for p in inbox.rglob("*") if p.is_file()} == before
+    assert "would create bead: 'T'" in capsys.readouterr().out
+
+
+def test_interactive_requires_tty(inbox: Path):
+    with (
+        patch("bd_track.triage.is_interactive", return_value=False),
+        pytest.raises(SystemExit, match="needs a terminal"),
+    ):
+        cmd_triage_interactive(inbox=inbox)

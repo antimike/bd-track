@@ -29,6 +29,32 @@ to its spec instead of restating it.
 is the basename of `--project-dir` or of the current git repository. Looking the name up in the
 [project registry](registry-schema.md) instead is `bd-timew-4is.7`.
 
+## Working the inbox interactively
+
+```
+bd-track triage [--dry-run] [--inbox DIR] [--project-dir DIR]
+```
+
+With no action, `triage` shows each open ticket in turn and asks what to do:
+**[a]ccept** (prompts for the bead's title, type and priority, then `resolve --bead`),
+**[r]eject** (a reason), **[d]uplicate** (what it duplicates), **[s]kip**, **as[k]** (a question;
+the ticket stays open, see below) or **[q]uit**. The loop is built only on `list`, `resolve` and
+`ask`, and re-reads the inbox after every action. `--dry-run` asks the same questions and prints
+each action instead of writing. It needs a terminal; scripts and agents use the commands below.
+
+The shared options (`--inbox`, `--project-dir`, `--dry-run`) go before or after the action.
+
+## Asking about a ticket
+
+```
+bd-track triage ask <ticket> <question> [--inbox DIR] [--project-dir DIR] [--dry-run]
+```
+
+Appends a `## Triage YYYY-MM-DD` section with the question (what is unclear and who must answer)
+and leaves the ticket open in `triage/`. A quick note has no room for a section, so it is first
+promoted to its own `triage/<date>-<slug>.md` (its stamp's keys become frontmatter, with
+`status: open`) and its paragraph leaves `inbox.md`.
+
 ## Listing tickets
 
 ```
@@ -127,3 +153,4 @@ format, and tickets written by hand or by other tools still work.
 | 2026-10-29 | A handled `inbox.md` paragraph is removed from `inbox.md` and written to `done/` as its own file with resolution keys. |
 | 2026-10-30 | Resolution statuses are `accepted`, `rejected`, `duplicate` and `done`, the same set the `/triage` skill writes (`bd-timew-4is.3`). |
 | 2026-10-30 | The default inbox root is `$BD_TRACK_INBOX_ROOT`, else `$XDG_STATE_HOME/triage`; `--inbox` overrides it per call (`bd-timew-4is.3`). |
+| 2026-10-30 | `ask` is its own command (not a `resolve` option), since the ticket stays open; asking about a quick note promotes it to a ticket file (`bd-timew-4is.5`). |

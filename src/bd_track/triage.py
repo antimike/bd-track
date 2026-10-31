@@ -25,12 +25,13 @@ import re
 import subprocess
 import sys
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
 
-from bd_track.util import root_log
+from bd_track.util import is_interactive, root_log
 
 TRIAGE_DIR = "triage"
 DONE_DIR = "done"
@@ -395,14 +396,18 @@ def _slugify(text: str, limit: int = 50) -> str:
 
 def done_path(inbox: Path, ticket: Ticket) -> Path:
     """Where a ticket lands in ``done/``: same name for a file, ``<date>-<slug>.md`` for a note."""
-    done = inbox / DONE_DIR
     if not ticket.is_note:
-        return done / ticket.path.name
+        return inbox / DONE_DIR / ticket.path.name
+    return note_path(inbox / DONE_DIR, ticket)
+
+
+def note_path(folder: Path, ticket: Ticket) -> Path:
+    """A free ``<date>-<slug>.md`` in ``folder`` for a quick note (``-2``, ``-3`` on clashes)."""
     stem = f"{ticket.date or dt.date.today().isoformat()}-{_slugify(ticket.title)}"
-    path = done / f"{stem}.md"
+    path = folder / f"{stem}.md"
     n = 2
     while path.exists():
-        path = done / f"{stem}-{n}.md"
+        path = folder / f"{stem}-{n}.md"
         n += 1
     return path
 
@@ -577,3 +582,163 @@ def cmd_triage_resolve(
             )
         raise
     print(moved)
+
+
+# ---------------------------------------------------------------------------
+# Asking about a ticket (it stays open)
+# ---------------------------------------------------------------------------
+
+
+def triage_section(question: str, day: str | None = None) -> str:
+    return f"## Triage {day or dt.date.today().isoformat()}\n\n{question.strip()}\n"
+
+
+def ask_ticket(inbox: Path, ticket: Ticket, question: str) -> Path:
+    """Append a ``## Triage <date>`` section to the ticket and leave it open.
+
+    A quick note has no room for a section, so it is promoted to its own ticket file in
+    ``triage/`` (keeping its stamp's keys) and its paragraph leaves ``inbox.md``.
+    """
+    section = triage_section(question)
+    if not ticket.is_note:
+        content = ticket.path.read_text(errors="replace").rstrip("\n")
+        _replace(ticket.path, f"{content}\n\n{section}")
+        return ticket.path
+    stamp = {k: ticket.meta[k] for k in ("from", "date", "type", "urgency") if k in ticket.meta}
+    head = set_frontmatter("", {**stamp, "status": "open"}).rstrip("\n")
+    target = note_path(inbox / TRIAGE_DIR, ticket)
+    try:
+        _write_new(
+            target,
+            f"{head}\n\n{ticket.body}\n\n{section}",
+            ticket.path.stat().st_mode & 0o777,
+        )
+    except FileExistsError:
+        sys.exit(f"bd-track: {target} already exists; not overwriting")
+    _remove_note(ticket)
+    return target
+
+
+def cmd_triage_ask(
+    ticket_id: str,
+    question: str,
+    *,
+    inbox: Path | None = None,
+    project_dir: Path | None = None,
+    dry_run: bool = False,
+) -> None:
+    """Record a question on one open ticket; print the ticket's path."""
+    folder = find_inbox(inbox, project_dir)
+    ticket = find_ticket(folder, ticket_id)
+    if dry_run:
+        where = "promote it to its own file and " if ticket.is_note else ""
+        print(f"would {where}append a Triage section to {ticket.id}: {question!r}")
+        return
+    print(ask_ticket(folder, ticket, question))
+
+
+# ---------------------------------------------------------------------------
+# Interactive loop (built on list, resolve and ask)
+# ---------------------------------------------------------------------------
+
+ACTIONS = {
+    "a": "accept",
+    "r": "reject",
+    "d": "duplicate",
+    "s": "skip",
+    "k": "ask",
+    "q": "quit",
+}
+PROMPT = "[a]ccept  [r]eject  [d]uplicate  [s]kip  as[k]  [q]uit"
+
+
+def _show(ticket: Ticket, index: int, total: int) -> None:
+    origin = ", ".join(v for v in (ticket.sender, ticket.date, ticket.type, ticket.urgency) if v)
+    print(f"\n── [{index}/{total}] {ticket.id}" + (f"  ({origin})" if origin else ""))
+    print(ticket.title)
+    if ticket.body.strip() and ticket.body.strip() != ticket.title:
+        print()
+        print(ticket.body)
+    print()
+
+
+def run_interactive(
+    folder: Path,
+    *,
+    project_dir: Path | None,
+    dry_run: bool,
+    ask: Callable[..., str],
+) -> dict[str, int]:
+    """Walk the open tickets, prompting via ``ask(message, choices=..., default=...)``.
+
+    The inbox is re-read after every action, so ids stay current when a quick note leaves
+    ``inbox.md``. Tickets skipped, asked about, or acted on in a dry run are not shown again.
+    Returns a count per action.
+    """
+    common = {"inbox": folder, "project_dir": project_dir, "dry_run": dry_run}
+    counts = {name: 0 for name in ACTIONS.values() if name != "quit"}
+    seen: set[str] = set()
+    while True:
+        pending = [t for t in read_inbox(folder) if t.id not in seen]
+        if not pending:
+            break
+        ticket = pending[0]
+        _show(ticket, len(seen) + 1, len(seen) + len(pending))
+        action = ACTIONS[ask(PROMPT, choices=list(ACTIONS), default="s")]
+        if action == "quit":
+            break
+        counts[action] += 1
+        if action == "accept":
+            default_type = TYPE_TO_BEAD.get(ticket.type or "", "task")
+            default_priority = str(URGENCY_TO_PRIORITY.get(ticket.urgency or "", 2))
+            cmd_triage_resolve(
+                ticket.id,
+                bead=True,
+                title=ask("Bead title", default=ticket.title),
+                bead_type=ask("Bead type", default=default_type),
+                priority=int(ask("Priority", choices=list("01234"), default=default_priority)),
+                **common,
+            )
+        elif action == "reject":
+            cmd_triage_resolve(ticket.id, reject=ask("Reason"), **common)
+        elif action == "duplicate":
+            cmd_triage_resolve(
+                ticket.id, duplicate=ask("Duplicate of (bead or ticket id)"), **common
+            )
+        elif action == "ask":
+            question = ask("Question (who must answer, and what)")
+            if dry_run or not ticket.is_note:
+                cmd_triage_ask(ticket.id, question, **common)
+            else:
+                seen.add(ask_ticket(folder, ticket, question).stem)
+                print(f"promoted {ticket.id} to its own ticket file")
+        if dry_run or action in ("skip", "ask"):
+            seen.add(ticket.id)
+    return counts
+
+
+def cmd_triage_interactive(
+    *,
+    inbox: Path | None = None,
+    project_dir: Path | None = None,
+    dry_run: bool = False,
+) -> None:
+    """``bd-track triage``: decide each open ticket in turn."""
+    if not is_interactive():
+        sys.exit(
+            "bd-track: triage needs a terminal; use `triage list --json` and "
+            "`triage resolve` / `triage ask` from scripts"
+        )
+    from rich.markup import escape
+    from rich.prompt import Prompt
+
+    def ask(message: str, **kwargs: object) -> str:
+        # The action prompt lists its choices itself; escape keeps "[a]ccept" from being markup.
+        return Prompt.ask(escape(message), show_choices=False, **kwargs)
+
+    folder = find_inbox(inbox, project_dir)
+    if dry_run:
+        root_log.info("dry run: nothing will be written")
+    counts = run_interactive(folder, project_dir=project_dir, dry_run=dry_run, ask=ask)
+    summary = ", ".join(f"{name} {n}" for name, n in counts.items() if n)
+    root_log.info("triage of %s: %s", folder, summary or "no open tickets")
