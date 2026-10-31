@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -25,6 +27,8 @@ def home(tmp_path: Path, monkeypatch) -> Path:
     monkeypatch.setattr(registry, "DEFAULT_REGISTRY", tmp_path / "projects.yaml")
     monkeypatch.setattr(registry, "REPOS_CONFIG", tmp_path / "bd-track" / "repos.yaml")
     monkeypatch.setattr(registry, "HOST_CONFIG", tmp_path / "bd-track" / "config.yaml")
+    monkeypatch.setattr(registry, "PATH_CACHE", tmp_path / "cache" / "registry-paths.json")
+    monkeypatch.delenv("BD_TRACK_SCAN_ROOTS", raising=False)
     (tmp_path / "bd-track").mkdir()
     return tmp_path
 
@@ -382,3 +386,127 @@ def test_for_directory(home: Path, tmp_path: Path):
     assert reg.for_directory(other) is None  # the remote is pinned to another clone
     assert reg.for_directory(worktree).name == "dots"
     assert reg.for_directory(bare) is None
+
+
+# ---------------------------------------------------------------------------
+# finding clones of path-less projects (d0t.3)
+# ---------------------------------------------------------------------------
+
+REMOTE_ONLY = "projects:\n  tool:\n    remote: me/tool\n    beads: { prefix: tl }\n"
+
+
+def _cache(home: Path) -> dict:
+    return json.loads(registry.PATH_CACHE.read_text())
+
+
+def test_no_roots_no_scan(home: Path, tmp_path: Path):
+    _clone(tmp_path / "src" / "tool", "git@github.com:me/tool.git")
+    registry.DEFAULT_REGISTRY.write_text(REMOTE_ONLY)
+    assert load_registry().get("tool").path is None
+    assert not registry.PATH_CACHE.exists()
+
+
+def test_scan_finds_and_caches(home: Path, tmp_path: Path, monkeypatch):
+    clone = _clone(tmp_path / "src" / "deep" / "tool", "git@alias.github.com:me/tool.git")
+    _clone(tmp_path / "src" / "other", "git@github.com:me/other.git")
+    monkeypatch.setenv("BD_TRACK_SCAN_ROOTS", f"{tmp_path / 'src'}{os.pathsep}{tmp_path / 'gone'}")
+    registry.DEFAULT_REGISTRY.write_text(REMOTE_ONLY)
+    reg = load_registry()
+    assert reg.get("tool").path == clone.resolve()
+    assert reg.beads_projects() == [reg.get("tool")]  # now a cleanup target
+    assert _cache(home)["paths"] == {"me/tool": str(clone.resolve())}
+    assert "scanned_at" in _cache(home)
+
+
+def test_cache_used_without_scan_and_dropped_when_stale(home: Path, tmp_path: Path, monkeypatch):
+    clone = _clone(tmp_path / "src" / "tool", "git@github.com:me/tool.git")
+    monkeypatch.setenv("BD_TRACK_SCAN_ROOTS", str(tmp_path / "src"))
+    registry.DEFAULT_REGISTRY.write_text(REMOTE_ONLY)
+    load_registry()
+    monkeypatch.setattr(registry, "find_clones", lambda roots: pytest.fail("scanned"))
+    assert load_registry().get("tool").path == clone.resolve()  # cache, no scan
+    subprocess.run(
+        ["git", "-C", str(clone), "remote", "set-url", "origin", "x:me/else.git"], check=True
+    )
+    assert load_registry(scan=False).get("tool").path is None  # origin changed: dropped
+    assert _cache(home)["paths"] == {}
+
+
+def test_scan_respects_ttl_and_force(home: Path, tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("BD_TRACK_SCAN_ROOTS", str(tmp_path / "src"))
+    (tmp_path / "src").mkdir()
+    registry.DEFAULT_REGISTRY.write_text(REMOTE_ONLY)
+    load_registry()  # scans (nothing found), stamps scanned_at
+    calls = []
+    real = registry.find_clones
+    monkeypatch.setattr(registry, "find_clones", lambda roots: calls.append(1) or real(roots))
+    load_registry()
+    assert calls == []  # within SCAN_TTL
+    clone = _clone(tmp_path / "src" / "tool", "git@github.com:me/tool.git")
+    assert load_registry(scan=True).get("tool").path == clone.resolve()
+    assert calls == [1]
+
+
+def test_ambiguous_clones_resolve_none(home: Path, tmp_path: Path, monkeypatch, caplog):
+    _clone(tmp_path / "src" / "tool", "git@github.com:me/tool.git")
+    _clone(tmp_path / "src" / "old" / "tool", "https://github.com/me/tool")
+    monkeypatch.setenv("BD_TRACK_SCAN_ROOTS", str(tmp_path / "src"))
+    registry.DEFAULT_REGISTRY.write_text(REMOTE_ONLY)
+    assert load_registry().get("tool").path is None
+    assert "2 clones of me/tool" in caplog.text and "pin one with 'path:'" in caplog.text
+    assert _cache(home)["paths"] == {}
+
+
+def test_scan_skips_worktrees_pinned_clones_and_depth(home: Path, tmp_path: Path, monkeypatch):
+    main = _clone(tmp_path / "src" / "tool", "git@github.com:me/tool.git")
+    subprocess.run(
+        ["git", "-C", str(main), "commit", "-q", "--allow-empty", "-m", "x"],
+        check=True,
+        env={
+            **os.environ,
+            "GIT_AUTHOR_NAME": "t",
+            "GIT_AUTHOR_EMAIL": "t@t",
+            "GIT_COMMITTER_NAME": "t",
+            "GIT_COMMITTER_EMAIL": "t@t",
+        },
+    )
+    subprocess.run(
+        ["git", "-C", str(main), "worktree", "add", "-q", str(tmp_path / "src" / "tool-wt")],
+        check=True,
+    )
+    pinned = _clone(tmp_path / "src" / "res", "git@github.com:me/res.git")
+    _clone(
+        tmp_path / "src" / "a" / "b" / "c" / "d" / "e" / "f" / "far", "git@github.com:me/far.git"
+    )
+    monkeypatch.setenv("BD_TRACK_SCAN_ROOTS", str(tmp_path / "src"))
+    registry.DEFAULT_REGISTRY.write_text(
+        REMOTE_ONLY
+        + f"  res:\n    remote: me/res\n    path: {pinned}\n"
+        + "  res2:\n    remote: me/res\n"
+        + "  far:\n    remote: me/far\n"
+    )
+    reg = load_registry()
+    assert reg.get("tool").path == main.resolve()  # the worktree did not make it ambiguous
+    assert reg.get("res2").path is None  # the only clone is pinned to res
+    assert reg.get("far").path is None  # deeper than SCAN_MAX_DEPTH
+
+
+def test_scan_roots_from_host_config(home: Path, tmp_path: Path):
+    clone = _clone(tmp_path / "code" / "tool", "git@github.com:me/tool.git")
+    registry.HOST_CONFIG.write_text(f"global:\n  scan_roots: [{tmp_path / 'code'}]\n")
+    registry.DEFAULT_REGISTRY.write_text(REMOTE_ONLY)
+    assert load_registry().get("tool").path == clone.resolve()
+    registry.HOST_CONFIG.write_text("global:\n  scan_roots: ~/code\n")
+    with pytest.raises(RegistryError, match="scan_roots must be a list"):
+        registry.scan_roots()
+
+
+def test_resolve_project_dir_forces_scan_on_miss(home: Path, tmp_path: Path, monkeypatch):
+    from bd_track.util import resolve_project_dir
+
+    monkeypatch.setenv("BD_TRACK_SCAN_ROOTS", str(tmp_path / "src"))
+    (tmp_path / "src").mkdir()
+    registry.DEFAULT_REGISTRY.write_text(REMOTE_ONLY)
+    load_registry()  # stamps scanned_at: the TTL alone would skip the next scan
+    clone = _clone(tmp_path / "src" / "tool", "git@github.com:me/tool.git")
+    assert resolve_project_dir("tool") == clone.resolve()
