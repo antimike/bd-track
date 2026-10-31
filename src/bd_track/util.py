@@ -188,44 +188,39 @@ def record_activity(project_path: str) -> None:
 
 
 # ---------------------------------------------------------------------------
-# repos.yaml helpers
+# Project registry lookups (--project / --global)
 # ---------------------------------------------------------------------------
 
-def load_repos_config() -> dict:
-    """Load ``~/.config/bd-track/repos.yaml``; return empty dict if missing."""
-    import yaml  # pyyaml — project dep, not stdlib
-    if not REPOS_CONFIG.exists():
-        return {}
-    with REPOS_CONFIG.open() as f:
-        return yaml.safe_load(f) or {}
-
-
 def resolve_project_dir(slug_or_path: str) -> Path:
-    """Resolve ``--project <slug-or-path>`` to a root path via repos.yaml.
+    """Resolve ``--project <name-or-path>`` to a project root via the registry.
 
-    Matches by path basename (short name) or by full path equality.
+    Matches a registry name, a path basename (legacy repos.yaml names), or the path itself.
     """
-    config = load_repos_config()
-    repos = config.get("repos") or []
+    from bd_track.registry import load_registry_or_exit
+
+    registry = load_registry_or_exit()
+    known = [p for p in registry.projects.values() if p.path is not None]
     candidate = Path(slug_or_path).expanduser()
-    for repo in repos:
-        repo_path = Path(repo["path"])
-        if repo_path == candidate or repo_path.name == slug_or_path:
-            return repo_path
-    known = ", ".join(Path(r["path"]).name for r in repos)
+    for project in known:
+        if slug_or_path in (project.name, project.path.name) or project.path == candidate:
+            return project.path
+    names = ", ".join(p.name for p in known)
     sys.exit(
-        f"bd-track: --project {slug_or_path!r} not found in repos.yaml"
-        + (f" (known: {known})" if known else "")
+        f"bd-track: --project {slug_or_path!r} not found in the project registry"
+        + (f" ({registry.source})" if registry.source else "")
+        + (f"; known: {names}" if names else "")
     )
 
 
 def all_project_dirs() -> list[Path]:
-    """Return all project root paths from repos.yaml (for ``--global``)."""
-    config = load_repos_config()
-    repos = config.get("repos") or []
-    if not repos:
-        sys.exit("bd-track: --global requires at least one entry in repos.yaml")
-    return [Path(r["path"]) for r in repos]
+    """Return the roots of every registered beads project with a known path (``--global``)."""
+    from bd_track.registry import load_registry_or_exit
+
+    projects = load_registry_or_exit().beads_projects()
+    if not projects:
+        sys.exit("bd-track: --global requires at least one beads project with a known path "
+                 "in the project registry")
+    return [p.path for p in projects]
 
 
 # ---------------------------------------------------------------------------

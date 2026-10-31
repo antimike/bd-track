@@ -158,15 +158,10 @@ def _plan_project(root: Path, managed: set[Path] | None) -> list[Action]:
 
 
 def _registered_repo_roots() -> list[Path]:
-    """Repo roots from repos.yaml (read via the compat path), sorted + deduped."""
-    from bd_track.project import load_repos_config
+    """Roots of the registered beads projects, sorted + deduped."""
+    from bd_track.registry import load_registry_or_exit
 
-    config = load_repos_config()
-    roots: list[Path] = []
-    for entry in config.get("repos", []):
-        path = entry.get("path")
-        if path:
-            roots.append(Path(path).expanduser())
+    roots = [p.path for p in load_registry_or_exit().beads_projects()]
     return sorted(set(roots), key=str)
 
 
