@@ -6,6 +6,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Registry projects with a `remote` but no `path` are found on disk by scanning the
+  host's `global.scan_roots` (or `$BD_TRACK_SCAN_ROOTS`) for a clone whose `origin`
+  matches; results are cached in `~/.cache/bd-track/registry-paths.json`. No roots, no
+  scan. Two or more clones of a remote are reported and left unresolved. Such projects
+  become cleanup, `--project` and `--global` targets (`bd-timew-d0t.3`).
+
 ## [0.6.0] - 2026-10-30
 
 ### Added

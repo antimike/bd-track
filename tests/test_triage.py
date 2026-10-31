@@ -38,6 +38,9 @@ def isolated_registry(tmp_path: Path, monkeypatch) -> Path:
     path.write_text("projects: {}\n")
     monkeypatch.setenv("BD_TRACK_REGISTRY", str(path))
     monkeypatch.setattr(registry, "REPOS_CONFIG", tmp_path / "no-repos.yaml")
+    monkeypatch.setattr(registry, "HOST_CONFIG", tmp_path / "no-config.yaml")
+    monkeypatch.setattr(registry, "PATH_CACHE", tmp_path / "no-cache.json")
+    monkeypatch.delenv("BD_TRACK_SCAN_ROOTS", raising=False)
     return path
 
 

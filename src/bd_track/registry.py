@@ -10,6 +10,10 @@ module implements them. Summary:
 - **Bridge** (until ``bd-timew-d0t.4`` migrates ``repos.yaml``): when the registry is the new
   file and ``repos.yaml`` also exists, each legacy entry fills in the path and bd-track settings
   of the project whose remote matches its clone's ``origin``, or is added under its basename.
+- **Finding clones** (``bd-timew-d0t.3``): a project with a ``remote`` but no ``path`` gets its
+  path from a cache of earlier finds (each checked against the clone's ``origin``), else from a
+  scan of the host's ``scan_roots`` for a clone whose ``origin`` matches. A remote with two or
+  more clones stays unresolved (pin one with ``path:``). With no roots configured, no scan runs.
 - **Host settings** (``global:``) come from ``~/.config/bd-track/config.yaml``, else the legacy
   ``repos.yaml`` ``global:``.
 - **Writes** round-trip with ruamel.yaml (comments, order and unknown keys survive), touch only
@@ -20,6 +24,8 @@ YAML is read as 1.2, so ``yes``/``no``/``on``/``off`` are strings, not booleans.
 
 from __future__ import annotations
 
+import datetime as dt
+import json
 import os
 import re
 import subprocess
@@ -32,10 +38,17 @@ from pathlib import Path
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
-from bd_track.util import _CONFIG_DIR, REPOS_CONFIG, root_log
+from bd_track.util import _CACHE_DIR, _CONFIG_DIR, REPOS_CONFIG, root_log
 
 DEFAULT_REGISTRY = Path.home() / ".config" / "projects.yaml"
 HOST_CONFIG = _CONFIG_DIR / "config.yaml"
+PATH_CACHE = _CACHE_DIR / "registry-paths.json"
+
+# A full scan runs at most this often while projects stay unresolved; a cache miss for a project
+# the user names (``--project``) forces one.
+SCAN_TTL = dt.timedelta(hours=24)
+SCAN_MAX_DEPTH = 5
+SCAN_SKIP_DIRS = {"node_modules", ".venv", "venv", ".cache", ".tox", "__pycache__"}
 
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9_-]*")
 
@@ -255,8 +268,12 @@ def _bridge(projects: dict[str, Project], legacy: list[Project]) -> None:
             match.beads.setdefault(key, value)
 
 
-def load_registry(explicit: Path | None = None) -> Registry:
-    """Load the registry (see the module docstring); an absent file is an empty registry."""
+def load_registry(explicit: Path | None = None, *, scan: bool | None = None) -> Registry:
+    """Load the registry (see the module docstring); an absent file is an empty registry.
+
+    ``scan`` controls finding clones of path-less projects: ``None`` scans when the last scan is
+    older than ``SCAN_TTL``, ``True`` always scans, ``False`` uses the cache only.
+    """
     source = registry_path(explicit)
     if source is None:
         return Registry(source=None, legacy=False)
@@ -271,7 +288,121 @@ def load_registry(explicit: Path | None = None) -> Registry:
     registry = Registry(source=source, legacy=False, projects=_parse_projects(data, source))
     if REPOS_CONFIG.exists() and REPOS_CONFIG.resolve() != source.resolve():
         _bridge(registry.projects, _legacy_projects(_read(REPOS_CONFIG), REPOS_CONFIG))
+    resolve_clones(registry, scan=scan)
     return registry
+
+
+# ---------------------------------------------------------------------------
+# Finding clones of path-less projects
+# ---------------------------------------------------------------------------
+
+
+def scan_roots() -> list[Path]:
+    """``$BD_TRACK_SCAN_ROOTS`` (``:``-separated), else host ``global.scan_roots``, else none."""
+    env = os.environ.get("BD_TRACK_SCAN_ROOTS")
+    if env is not None:
+        raw: list = [part for part in env.split(os.pathsep) if part.strip()]
+    else:
+        raw = load_host_config().get("scan_roots") or []
+        if not isinstance(raw, list) or not all(isinstance(r, str) for r in raw):
+            raise RegistryError(f"{HOST_CONFIG}: global.scan_roots must be a list of paths")
+    return [Path(r).expanduser() for r in raw]
+
+
+def find_clones(roots: list[Path], max_depth: int = SCAN_MAX_DEPTH) -> dict[str, list[Path]]:
+    """Map normalized ``origin`` remote to the clones under ``roots`` that have it.
+
+    A clone is a directory holding a ``.git`` directory; worktrees and submodules (whose ``.git``
+    is a file) are not counted, so a project's worktrees do not make its remote ambiguous.
+    """
+    clones: dict[str, set[Path]] = {}
+    for root in roots:
+        if not root.is_dir():
+            continue
+        base = len(root.resolve().parts)
+        for current, dirs, _files in os.walk(root.resolve()):
+            here = Path(current)
+            if (here / ".git").is_dir():
+                remote = origin_remote(here)
+                if remote:
+                    clones.setdefault(remote, set()).add(here)
+            if len(here.parts) - base >= max_depth:
+                dirs.clear()
+                continue
+            dirs[:] = [d for d in dirs if d != ".git" and d not in SCAN_SKIP_DIRS]
+    return {remote: sorted(paths) for remote, paths in clones.items()}
+
+
+def _load_cache() -> dict:
+    try:
+        data = json.loads(PATH_CACHE.read_text())
+    except (OSError, ValueError):
+        return {"paths": {}}
+    if not isinstance(data, dict) or not isinstance(data.get("paths"), dict):
+        return {"paths": {}}
+    return data
+
+
+def _save_cache(cache: dict) -> None:
+    try:
+        _atomic_write(PATH_CACHE, json.dumps(cache, indent=2, sort_keys=True) + "\n")
+    except OSError as err:
+        root_log.debug("could not write %s: %s", PATH_CACHE, err)
+
+
+def _scan_due(cache: dict) -> bool:
+    stamp = cache.get("scanned_at")
+    try:
+        last = dt.datetime.fromisoformat(stamp) if stamp else None
+    except (TypeError, ValueError):
+        last = None
+    return last is None or dt.datetime.now(dt.timezone.utc) - last >= SCAN_TTL
+
+
+def resolve_clones(registry: Registry, *, scan: bool | None = None) -> None:
+    """Fill in ``path`` for projects that have a ``remote`` but no ``path`` (module docstring)."""
+    wanted = {p.remote: p for p in registry.projects.values() if p.remote and p.path is None}
+    if not wanted:
+        return
+    taken = {p.path for p in registry.projects.values() if p.path is not None}
+    cache = _load_cache()
+    paths: dict[str, str] = cache["paths"]
+    changed = False
+
+    for remote, project in wanted.items():
+        cached = paths.get(remote)
+        if cached is None:
+            continue
+        clone = Path(cached)
+        if clone not in taken and origin_remote(clone) == remote:
+            project.path = clone
+        else:
+            root_log.debug("dropping stale cached path %s for %s", cached, remote)
+            del paths[remote]
+            changed = True
+
+    unresolved = [r for r, p in wanted.items() if p.path is None]
+    if unresolved and (scan or (scan is None and _scan_due(cache))):
+        roots = scan_roots()
+        if roots:
+            found = find_clones(roots)
+            for remote in unresolved:
+                clones = [c for c in found.get(remote, []) if c not in taken]
+                if len(clones) == 1:
+                    wanted[remote].path = clones[0]
+                    paths[remote] = str(clones[0])
+                elif clones:
+                    root_log.warning(
+                        "project %s: %d clones of %s (%s); pin one with 'path:' in the registry",
+                        wanted[remote].name,
+                        len(clones),
+                        remote,
+                        ", ".join(str(c) for c in clones),
+                    )
+            cache["scanned_at"] = dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds")
+            changed = True
+    if changed:
+        _save_cache(cache)
 
 
 def load_host_config() -> dict:
@@ -298,10 +429,10 @@ def load_host_config() -> dict:
     return host
 
 
-def load_registry_or_exit(explicit: Path | None = None) -> Registry:
+def load_registry_or_exit(explicit: Path | None = None, *, scan: bool | None = None) -> Registry:
     """``load_registry`` for CLI callers: a broken file is a clean ``bd-track:`` exit."""
     try:
-        return load_registry(explicit)
+        return load_registry(explicit, scan=scan)
     except RegistryError as err:
         sys.exit(f"bd-track: {err}")
 

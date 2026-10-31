@@ -70,6 +70,7 @@ global:
   check_interval: daily       # systemd timer cadence for bd-track cleanup
   idle_stop_hours: 4          # 0 disables the idle-stop timer
   dolt_push: false            # always | never | true | false
+  scan_roots: []              # where to look for clones of remote-only projects (none: no scan)
   defaults:
     statuses: []
     hooks: []
@@ -78,6 +79,15 @@ global:
 Resolved clone paths (remote → path, `bd-timew-d0t.3`) are cached in
 `~/.cache/bd-track/registry-paths.json`. The cache is never authoritative: a cached path whose
 `origin` no longer matches is dropped and re-resolved.
+
+### `scan_roots`
+
+Directories searched (up to 5 levels deep) for a clone of a project that has a `remote` but no
+`path`. `$BD_TRACK_SCAN_ROOTS` (`:`-separated) overrides it. There is no default: with neither
+set, no scan runs and such a project resolves only through the cache. A clone is a directory with
+a `.git` directory, so worktrees and submodules are not counted. A full scan runs at most once a
+day while projects stay unresolved; `--project <name>` for a project with no known clone forces
+one.
 
 ### `dolt_push`
 
@@ -98,8 +108,10 @@ booleans. Hosts with unreliable network stacks (WSL2) should use `never`.
 - **By name** (`--project <name>`): the key under `projects:`.
 - **By directory** (the current repo's project): `path` if set and equal, else the clone's `origin`
   matched against `remote`. A path-pinned project wins over a remote match for the same clone.
-- **Clone of a name**: `path` if set, else the cache, else a scan of known roots for a clone whose
-  `origin` matches (`bd-timew-d0t.3`).
+- **Clone of a name**: `path` if set, else the cache, else a scan of the
+  [scan roots](#scan_roots) for a clone whose `origin` matches (`bd-timew-d0t.3`). A clone already
+  pinned by another project's `path` is not a candidate. Two or more matching clones leave the
+  path unknown, with a warning naming them: pin one with `path:`.
 
 ## Writing
 
@@ -154,4 +166,5 @@ implement.
 | 2026-10-30 | bd-track writes the registry in place with `ruamel.yaml` (new dependency), atomically. |
 | 2026-10-30 | bd-track is agnostic about how the file is managed or shared (no dotfiles-manager detection or hints); managers must merge, not overwrite. Projects may be registered on all hosts or only some. |
 | 2026-10-30 | While `repos.yaml` still exists, bd-track reads it alongside the registry and lets it fill in paths and bd-track settings ([bridge](#legacy-reposyaml)); `bd-timew-d0t.4`'s migration retires it. Chosen over switching outright (cleanup would lose path-less projects) or deferring the switch (`bd-timew-d0t.2`, MH). |
+| 2026-10-30 | Scan roots come from `global.scan_roots` or `$BD_TRACK_SCAN_ROOTS`, with no default (no scan unless configured); two or more clones of a remote resolve to none, with a warning; every beads project with a known clone is a cleanup target (`bd-timew-d0t.3`, MH). |
 | 2026-10-30 | `global.dolt_push` takes `always`/`never` (force) or `true`/`false` (default, overridden per project). Supersedes `bd-timew-ayn.4`'s "per-project override" wording. |
