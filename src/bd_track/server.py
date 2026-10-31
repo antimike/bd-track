@@ -99,25 +99,22 @@ def cmd_servers() -> None:
     """List registered repos and their Dolt server status, plus any running
     but unregistered servers (two-pass discovery).
 
-    Pass 1 — registered repos from `~/.config/bd-track/repos.yaml`: the
+    Pass 1 — registered beads projects from the project registry: the
     canonical view, with last-activity, configured server settings, etc.
 
     Pass 2 — running `dolt sql-server` processes whose project root isn't
-    in repos.yaml: surface them as `[unregistered]` with a hint pointing
+    in the registry: surface them as `[unregistered]` with a hint pointing
     at `bd-track init-project --path <path>`. This matters because
     `bd init --server` doesn't register with bd-track, so a project beads
     workspace started outside bd-track would otherwise be invisible here.
     """
-    from bd_track.project import load_repos_config  # late import: avoid cycle
+    from bd_track.registry import load_registry_or_exit  # late import: avoid cycle
 
-    config = load_repos_config()
-    repos = config.get("repos", [])
+    repos = load_registry_or_exit().beads_projects()
 
     registered_paths: set[str] = set()
     for repo in repos:
-        path = repo.get("path")
-        if not path:
-            continue
+        path = str(repo.path)
         registered_paths.add(str(Path(path).resolve()))
 
         project_dir = Path(path)
@@ -152,24 +149,22 @@ def cmd_servers() -> None:
                 root, pid, root,
             )
     elif not repos:
-        from bd_track.util import REPOS_CONFIG
-        root_log.info("No repos registered in %s and no running dolt servers found", REPOS_CONFIG)
+        root_log.info("No beads projects in the project registry and no running dolt servers found")
 
 
 def cmd_server_stop(path: Path | None) -> None:
     """Stop Dolt servers for one or all registered repos."""
-    from bd_track.project import load_repos_config
+    from bd_track.registry import load_registry_or_exit
 
-    config = load_repos_config()
-    repos = config.get("repos", [])
+    repos = load_registry_or_exit().beads_projects()
 
     if path is not None:
         targets = [str(path.resolve())]
     else:
-        targets = [r.get("path") for r in repos if r.get("path")]
+        targets = [str(r.path) for r in repos]
 
     if not targets:
-        root_log.info("No repos to stop (repos.yaml is empty or --path not found)")
+        root_log.info("No repos to stop (no beads projects in the registry, or --path not found)")
         return
 
     for proj_path in targets:
@@ -196,22 +191,19 @@ def cmd_server_stop(path: Path | None) -> None:
 
 def cmd_idle_stop(hours: float) -> None:
     """Stop Dolt servers idle longer than the threshold; ``hours=0`` reports only."""
-    from bd_track.project import load_repos_config
+    from bd_track.registry import load_registry_or_exit
 
-    config = load_repos_config()
     now = dt.datetime.now(dt.timezone.utc)
     threshold = dt.timedelta(hours=hours)
 
-    for repo in config.get("repos", []):
-        path = repo.get("path")
-        if not path:
-            continue
+    for repo in load_registry_or_exit().beads_projects():
+        path = str(repo.path)
         project_dir = Path(path)
         if not project_dir.is_dir():
             continue
 
         # Only act on server-mode repos
-        server_cfg = repo.get("server", {})
+        server_cfg = repo.beads.get("server") or {}
         if not server_cfg.get("enabled", False):
             continue
 

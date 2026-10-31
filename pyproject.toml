@@ -28,6 +28,7 @@ dependencies = [
     "python-ulid>=2.0",
     "typing_extensions>=4.0",  # python-ulid imports it unconditionally on 3.13
     "dateparser>=1.1",
+    "ruamel-yaml>=0.18",
 ]
 
 [project.scripts]

@@ -106,7 +106,8 @@ booleans. Hosts with unreliable network stacks (WSL2) should use `never`.
 bd-track writes the registry in place (`init-project`, `migrate`):
 
 - Round-trip with `ruamel.yaml`, so comments, key order and unknown keys survive. PyYAML would
-  strip the header comments.
+  strip the header comments. (ruamel does not keep the inner spaces of flow maps:
+  `{ prefix: amo }` is written back as `{prefix: amo}`.)
 - Touch only bd-track-owned keys. A new project gets `remote` (from `origin`) or `path`, and
   `beads.prefix`.
 - Write atomically: a temp file in the same directory, then `rename()`.
@@ -128,6 +129,15 @@ readable until `bd-timew-d0t.4` migrates it:
 
 `--project <slug>` keeps matching a legacy path basename.
 
+**Bridge while both files exist.** Until the migration, `init-project` still writes `repos.yaml`,
+and a registry may list a project by `remote` only, with no way yet to find its clone
+(`bd-timew-d0t.3`). So when the registry in use is not `repos.yaml` itself and `repos.yaml` also
+exists, bd-track reads both. Each `repos.yaml` entry completes the registry project with the same
+`path`, else the path-less project whose `remote` matches the clone's `origin`: it supplies the
+`path` and any `beads.` key the registry does not set (the registry wins). An entry that matches
+no project is added under its basename, unless that name is taken (then it is skipped with a
+warning). Host settings come from `config.yaml` when it exists, else `repos.yaml` `global:`.
+
 ## A shared package (deferred)
 
 `ticket` and bd-track will each parse this file. When the drift costs more than a release would,
@@ -143,4 +153,5 @@ implement.
 | 2026-10-30 | Host-specific settings (`global:`, path cache) stay in bd-track's own config, not the registry. |
 | 2026-10-30 | bd-track writes the registry in place with `ruamel.yaml` (new dependency), atomically. |
 | 2026-10-30 | bd-track is agnostic about how the file is managed or shared (no dotfiles-manager detection or hints); managers must merge, not overwrite. Projects may be registered on all hosts or only some. |
+| 2026-10-30 | While `repos.yaml` still exists, bd-track reads it alongside the registry and lets it fill in paths and bd-track settings ([bridge](#legacy-reposyaml)); `bd-timew-d0t.4`'s migration retires it. Chosen over switching outright (cleanup would lose path-less projects) or deferring the switch (`bd-timew-d0t.2`, MH). |
 | 2026-10-30 | `global.dolt_push` takes `always`/`never` (force) or `true`/`false` (default, overridden per project). Supersedes `bd-timew-ayn.4`'s "per-project override" wording. |

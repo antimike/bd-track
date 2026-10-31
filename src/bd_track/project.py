@@ -125,6 +125,10 @@ def _ensure_auto_push_disabled(beads_dir: Path) -> None:
 # ---------------------------------------------------------------------------
 
 def load_repos_config() -> dict:
+    """Raw legacy ``repos.yaml``, for ``init-project``'s writes only (until bd-timew-d0t.4).
+
+    Readers use the project registry (``bd_track.registry``) instead.
+    """
     if not REPOS_CONFIG.exists():
         return {"global": {"defaults": {"statuses": [], "hooks": []}}, "repos": []}
     with REPOS_CONFIG.open() as f:
@@ -641,18 +645,20 @@ def cmd_cleanup(
 # ---------------------------------------------------------------------------
 
 def cmd_run_service() -> None:
-    """Iterate registered repos and run cleanup when due per repo cadence."""
-    config = load_repos_config()
+    """Iterate registered beads projects and run cleanup when due per project cadence."""
+    from bd_track.registry import RegistryError, load_registry
+
+    try:
+        projects = load_registry().beads_projects()
+    except RegistryError as err:
+        cleanup_log.error("cannot read the project registry: %s", err)
+        return
     state = _load_cleanup_state()
     now = dt.datetime.now(dt.timezone.utc)
 
-    for repo in config.get("repos", []):
-        path = repo.get("path")
-        if not path:
-            cleanup_log.warning("repos.yaml entry missing 'path', skipping")
-            continue
-
-        cadence_str = repo.get("commit_cadence", "1d")
+    for project in projects:
+        path = str(project.path)
+        cadence_str = project.beads.get("commit_cadence", "1d")
         cadence = parse_cadence(cadence_str)
         last_run_str = state.get(path, {}).get("last_run")
         last_run = (
@@ -671,7 +677,7 @@ def cmd_run_service() -> None:
         cleanup_log.info("%s: due for cleanup (cadence=%s)", path, cadence_str)
         try:
             cmd_cleanup(
-                days=repo.get("compact_days", 7),
+                days=project.beads.get("compact_days", 7),
                 commit=True,
                 project_dir=Path(path),
             )
