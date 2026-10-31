@@ -157,8 +157,8 @@ def cmd_stop(issue_id: str | None = None, *, clean: bool = True,
     ``at`` overrides the stop timestamp (natural language or ISO-8601 string).
     Must be in the past and after the interval's own start time.
 
-    When ``clean`` is True (default), sweeps closed/deferred beads from queue
-    scopes afterward (``--no-clean`` to skip).
+    When ``clean`` is True (default), sweeps closed beads from queue scopes
+    afterward (``--no-clean`` to skip). Deferred beads stay queued.
     """
     project_root = _project_root()
     sid = resolve_session_id(project_root, explicit=session_id)
@@ -199,9 +199,9 @@ def cmd_stop(issue_id: str | None = None, *, clean: bool = True,
                       iv.interval[:8], elapsed)
 
     if clean:
-        from bd_track.queue import cmd_clean
+        from bd_track.queue import STOP_SWEEP_STATUSES, cmd_clean
         try:
-            cmd_clean(quiet=True)
+            cmd_clean(quiet=True, statuses=STOP_SWEEP_STATUSES)
         except SystemExit:
             pass
 
