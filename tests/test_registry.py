@@ -360,3 +360,25 @@ def test_run_service_logs_broken_registry(home: Path, monkeypatch):
     registry.DEFAULT_REGISTRY.write_text("projects: [\n")
     monkeypatch.setattr(project, "cmd_cleanup", lambda **kw: pytest.fail("should not run"))
     project.cmd_run_service()  # logs, does not raise
+
+
+# ---------------------------------------------------------------------------
+# for_directory
+# ---------------------------------------------------------------------------
+
+
+def test_for_directory(home: Path, tmp_path: Path):
+    pinned = _clone(tmp_path / "docs" / "resume", "git@github.com:me/resume.git")
+    other = _clone(tmp_path / "old" / "resume", "git@github.com:me/resume.git")
+    worktree = _clone(tmp_path / "wt" / "feature", "git@github.com:me/dotfiles.git")
+    bare = _clone(tmp_path / "bare", None)
+    registry.DEFAULT_REGISTRY.write_text(
+        "projects:\n"
+        f"  resume:\n    remote: me/resume\n    path: {pinned}\n"
+        "  dots:\n    remote: me/dotfiles\n"
+    )
+    reg = load_registry()
+    assert reg.for_directory(pinned).name == "resume"
+    assert reg.for_directory(other) is None  # the remote is pinned to another clone
+    assert reg.for_directory(worktree).name == "dots"
+    assert reg.for_directory(bare) is None

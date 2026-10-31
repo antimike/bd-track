@@ -25,9 +25,11 @@ to its spec instead of restating it.
 ### Where the inbox is
 
 `--inbox DIR` names it directly. Otherwise it is `<root>/<project>`, where `<root>` is
-`$BD_TRACK_INBOX_ROOT`, else `$XDG_STATE_HOME/triage` (`~/.local/state/triage`), and `<project>`
-is the basename of `--project-dir` or of the current git repository. Looking the name up in the
-[project registry](registry-schema.md) instead is `bd-timew-4is.7`.
+`$BD_TRACK_INBOX_ROOT`, else `$XDG_STATE_HOME/triage` (`~/.local/state/triage`). `<project>` is
+the [project registry](registry-schema.md#resolving-a-project) name of `--project-dir` or of the
+current git repository (its `path`, else its `origin` matched against `remote`), so every clone
+and worktree of a project shares one inbox. An unregistered directory, or an unreadable registry
+(reported as a warning), falls back to the directory's basename.
 
 ## Working the inbox interactively
 
@@ -154,3 +156,4 @@ format, and tickets written by hand or by other tools still work.
 | 2026-10-30 | Resolution statuses are `accepted`, `rejected`, `duplicate` and `done`, the same set the `/triage` skill writes (`bd-timew-4is.3`). |
 | 2026-10-30 | The default inbox root is `$BD_TRACK_INBOX_ROOT`, else `$XDG_STATE_HOME/triage`; `--inbox` overrides it per call (`bd-timew-4is.3`). |
 | 2026-10-30 | `ask` is its own command (not a `resolve` option), since the ticket stays open; asking about a quick note promotes it to a ticket file (`bd-timew-4is.5`). |
+| 2026-10-30 | The inbox is named by the project's registry name, falling back to the directory basename (`bd-timew-4is.7`). |

@@ -79,6 +79,24 @@ class Registry:
         target = path.expanduser().resolve()
         return next((p for p in self.projects.values() if p.path == target), None)
 
+    def for_directory(self, path: Path) -> Project | None:
+        """The project a clone at ``path`` belongs to (schema doc, "Resolving a project").
+
+        A project whose ``path`` is this directory wins. Otherwise the clone's ``origin`` is
+        matched against ``remote``, but only for projects without a ``path``: a path-pinned
+        project names only its own clone.
+        """
+        pinned = self.by_path(path)
+        if pinned is not None:
+            return pinned
+        remote = origin_remote(path)
+        if remote is None:
+            return None
+        return next(
+            (p for p in self.projects.values() if p.remote == remote and p.path is None),
+            None,
+        )
+
     def beads_projects(self) -> list[Project]:
         """Projects that use beads and have a known path, in registry order."""
         return [p for p in self.projects.values() if p.uses_beads and p.path is not None]
