@@ -29,6 +29,38 @@ to its spec instead of restating it.
 is the basename of `--project-dir` or of the current git repository. Looking the name up in the
 [project registry](registry-schema.md) instead is `bd-timew-4is.7`.
 
+## Listing tickets
+
+```
+bd-track triage list [--json] [--inbox DIR] [--project-dir DIR]
+```
+
+Lists the open tickets: files in `triage/` in name order, then `inbox.md` paragraphs. A file whose
+`status` is anything but `open` is skipped. The table shows id, date, sender, type/urgency and
+title, with `-` where a ticket does not say.
+
+`--json` is the contract for scripts and agents:
+
+```json
+{
+  "inbox": "/abs/path/to/inbox",
+  "tickets": [
+    {
+      "id": "2026-10-29-some-ticket",   // or inbox-<hash> for a quick note
+      "path": "/abs/path/to/inbox/triage/2026-10-29-some-ticket.md",
+      "source": "2026-10-29-some-ticket.md",  // inbox.md for a note
+      "kind": "file",                   // or "note"
+      "title": "...",
+      "from": "...", "date": "YYYY-MM-DD",    // null when absent
+      "type": "feature", "urgency": "high",   // null unless a recognised value
+      "status": "open",
+      "meta": {},                       // every frontmatter or stamp key, as strings
+      "body": "..."                     // text after the frontmatter or stamp
+    }
+  ]
+}
+```
+
 ## Resolving a ticket
 
 ```

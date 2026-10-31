@@ -1,4 +1,4 @@
-"""Tests for triage.py — lenient ticket inbox parser."""
+"""Tests for triage.py — ticket inbox parser, list and resolve."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from unittest.mock import patch
 import pytest
 
 from bd_track.triage import (
+    cmd_triage_list,
     cmd_triage_resolve,
     find_inbox,
     note_id,
@@ -409,3 +410,71 @@ def test_set_frontmatter_dates_bare_other_values_quoted():
     text = set_frontmatter("body\n", {"resolved": "2026-10-30", "outcome": "a: b"})
     assert "resolved: 2026-10-30\n" in text
     assert split_frontmatter(text)[0] == {"resolved": "2026-10-30", "outcome": "a: b"}
+
+
+def test_resolve_keeps_file_modes(inbox: Path):
+    ticket = inbox / "triage" / "freeform-oneline.md"
+    notes = inbox / "triage" / "inbox.md"
+    ticket.chmod(0o644)
+    notes.chmod(0o640)
+    _resolve(inbox, "freeform-oneline", reject="x")
+    _resolve(inbox, parse_notes(notes)[0].id, reject="x")
+    assert (inbox / "done" / "freeform-oneline.md").stat().st_mode & 0o777 == 0o644
+    assert notes.stat().st_mode & 0o777 == 0o640
+    note_done = inbox / "done" / "2026-10-30-waybar-clock-drifts-after-resume.md"
+    assert note_done.stat().st_mode & 0o777 == 0o640
+
+
+# ---------------------------------------------------------------------------
+# list
+# ---------------------------------------------------------------------------
+
+
+def test_list_json_contract(capsys):
+    cmd_triage_list(inbox=FIXTURE, as_json=True)
+    data = json.loads(capsys.readouterr().out)
+    assert data["inbox"] == str(FIXTURE.resolve())
+    tickets = {t["id"]: t for t in data["tickets"]}
+    assert len(tickets) == 12  # 7 files + 5 notes; handled file excluded
+    assert set(tickets["2026-10-29-structured"]) == {
+        "id",
+        "path",
+        "source",
+        "kind",
+        "title",
+        "from",
+        "date",
+        "type",
+        "urgency",
+        "status",
+        "meta",
+        "body",
+    }
+    note = tickets[note_id("2026-10-30 MH (bug, high): waybar clock drifts after resume?")]
+    assert (note["kind"], note["source"], note["type"]) == ("note", "inbox.md", "bug")
+    assert Path(note["path"]).is_absolute()
+    partial = tickets["partial-frontmatter"]
+    assert (partial["type"], partial["meta"]["type"]) == (None, "Chore")
+
+
+def test_list_table(capsys):
+    cmd_triage_list(inbox=FIXTURE)
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 12
+    assert lines[0].split()[:4] == [
+        "2026-10-29-structured",
+        "2026-10-29",
+        "claude@chezmoi",
+        "feature/high",
+    ]
+    assert lines[0].endswith("Structured ticket with full frontmatter")
+    assert lines[1].split()[:4] == ["empty", "-", "-", "-"]
+    starts = {line.index(line.split()[-1]) for line in lines if line.endswith("twice")}
+    assert len(starts) == 1  # columns aligned
+
+
+def test_list_empty_inbox(tmp_path: Path, capsys):
+    cmd_triage_list(inbox=tmp_path)
+    assert capsys.readouterr().out == ""
+    cmd_triage_list(inbox=tmp_path, as_json=True)
+    assert json.loads(capsys.readouterr().out)["tickets"] == []

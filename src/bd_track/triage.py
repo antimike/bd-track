@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -101,6 +102,7 @@ class Ticket:
         return {
             "id": self.id,
             "path": str(self.path),
+            "source": self.path.name,
             "kind": "note" if self.is_note else "file",
             "title": self.title,
             "from": self.sender,
@@ -270,7 +272,7 @@ def project_root(project_dir: Path | None = None) -> Path:
 def find_inbox(inbox: Path | None = None, project_dir: Path | None = None) -> Path:
     """The project's inbox: ``inbox`` if given, else ``<inbox_root>/<project basename>``."""
     if inbox is not None:
-        return inbox.expanduser()
+        return inbox.expanduser().resolve()
     return inbox_root() / project_root(project_dir).name
 
 
@@ -281,6 +283,50 @@ def find_ticket(inbox: Path, ticket_id: str) -> Ticket:
         if ticket.id == wanted:
             return ticket
     sys.exit(f"bd-track: no open ticket {ticket_id!r} in {inbox / TRIAGE_DIR}")
+
+
+# ---------------------------------------------------------------------------
+# Listing tickets
+# ---------------------------------------------------------------------------
+
+
+def format_table(tickets: list[Ticket]) -> str:
+    """One line per ticket: id, date, sender, type/urgency, title (``-`` for unknowns)."""
+    rows = [
+        (
+            t.id,
+            t.date or "-",
+            t.sender or "-",
+            "/".join(v for v in (t.type, t.urgency) if v) or "-",
+            t.title,
+        )
+        for t in tickets
+    ]
+    widths = [max(len(row[i]) for row in rows) for i in range(4)]
+    return "\n".join(
+        "  ".join([*(cell.ljust(w) for cell, w in zip(row[:4], widths, strict=True)), row[4]])
+        for row in rows
+    )
+
+
+def cmd_triage_list(
+    *,
+    inbox: Path | None = None,
+    project_dir: Path | None = None,
+    as_json: bool = False,
+) -> None:
+    """Print the project's open tickets: a table, or ``{"inbox", "tickets"}`` as JSON."""
+    folder = find_inbox(inbox, project_dir)
+    tickets = read_inbox(folder)
+    if as_json:
+        print(
+            json.dumps({"inbox": str(folder), "tickets": [t.to_dict() for t in tickets]}, indent=2)
+        )
+        return
+    if not tickets:
+        root_log.info("no open tickets in %s", folder / TRIAGE_DIR)
+        return
+    print(format_table(tickets))
 
 
 # ---------------------------------------------------------------------------
@@ -361,23 +407,33 @@ def done_path(inbox: Path, ticket: Ticket) -> Path:
     return path
 
 
-def _write_new(path: Path, content: str) -> None:
-    """Write ``content`` to ``path`` atomically, refusing to replace an existing file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+def _write_temp(folder: Path, name: str, content: str, mode: int) -> str:
+    """Write ``content`` to a temp file in ``folder`` with ``mode`` (mkstemp alone gives 0600)."""
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=f".{name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w") as handle:
             handle.write(content)
+        os.chmod(tmp, mode)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+    return tmp
+
+
+def _write_new(path: Path, content: str, mode: int) -> None:
+    """Write ``content`` to ``path`` atomically, refusing to replace an existing file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _write_temp(path.parent, path.name, content, mode)
+    try:
         os.link(tmp, path)  # fails if path exists, unlike os.replace
     finally:
         os.unlink(tmp)
 
 
 def _replace(path: Path, content: str) -> None:
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    with os.fdopen(fd, "w") as handle:
-        handle.write(content)
-    os.replace(tmp, path)
+    """Atomically replace ``path``, keeping its permissions."""
+    mode = path.stat().st_mode & 0o777
+    os.replace(_write_temp(path.parent, path.name, content, mode), path)
 
 
 def _remove_note(ticket: Ticket) -> None:
@@ -409,7 +465,7 @@ def move_to_done(inbox: Path, ticket: Ticket, resolution: Resolution) -> Path:
     """Write the resolved ticket to ``done/``, then remove it from ``triage/``."""
     target = done_path(inbox, ticket)
     try:
-        _write_new(target, done_content(ticket, resolution))
+        _write_new(target, done_content(ticket, resolution), ticket.path.stat().st_mode & 0o777)
     except FileExistsError:
         sys.exit(f"bd-track: {target} already exists; not overwriting")
     if ticket.is_note:
