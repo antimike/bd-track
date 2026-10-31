@@ -361,23 +361,33 @@ def done_path(inbox: Path, ticket: Ticket) -> Path:
     return path
 
 
-def _write_new(path: Path, content: str) -> None:
-    """Write ``content`` to ``path`` atomically, refusing to replace an existing file."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
+def _write_temp(folder: Path, name: str, content: str, mode: int) -> str:
+    """Write ``content`` to a temp file in ``folder`` with ``mode`` (mkstemp alone gives 0600)."""
+    fd, tmp = tempfile.mkstemp(dir=folder, prefix=f".{name}.", suffix=".tmp")
     try:
         with os.fdopen(fd, "w") as handle:
             handle.write(content)
+        os.chmod(tmp, mode)
+    except BaseException:
+        os.unlink(tmp)
+        raise
+    return tmp
+
+
+def _write_new(path: Path, content: str, mode: int) -> None:
+    """Write ``content`` to ``path`` atomically, refusing to replace an existing file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _write_temp(path.parent, path.name, content, mode)
+    try:
         os.link(tmp, path)  # fails if path exists, unlike os.replace
     finally:
         os.unlink(tmp)
 
 
 def _replace(path: Path, content: str) -> None:
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.name}.", suffix=".tmp")
-    with os.fdopen(fd, "w") as handle:
-        handle.write(content)
-    os.replace(tmp, path)
+    """Atomically replace ``path``, keeping its permissions."""
+    mode = path.stat().st_mode & 0o777
+    os.replace(_write_temp(path.parent, path.name, content, mode), path)
 
 
 def _remove_note(ticket: Ticket) -> None:
@@ -409,7 +419,7 @@ def move_to_done(inbox: Path, ticket: Ticket, resolution: Resolution) -> Path:
     """Write the resolved ticket to ``done/``, then remove it from ``triage/``."""
     target = done_path(inbox, ticket)
     try:
-        _write_new(target, done_content(ticket, resolution))
+        _write_new(target, done_content(ticket, resolution), ticket.path.stat().st_mode & 0o777)
     except FileExistsError:
         sys.exit(f"bd-track: {target} already exists; not overwriting")
     if ticket.is_note:

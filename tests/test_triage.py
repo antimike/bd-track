@@ -409,3 +409,16 @@ def test_set_frontmatter_dates_bare_other_values_quoted():
     text = set_frontmatter("body\n", {"resolved": "2026-10-30", "outcome": "a: b"})
     assert "resolved: 2026-10-30\n" in text
     assert split_frontmatter(text)[0] == {"resolved": "2026-10-30", "outcome": "a: b"}
+
+
+def test_resolve_keeps_file_modes(inbox: Path):
+    ticket = inbox / "triage" / "freeform-oneline.md"
+    notes = inbox / "triage" / "inbox.md"
+    ticket.chmod(0o644)
+    notes.chmod(0o640)
+    _resolve(inbox, "freeform-oneline", reject="x")
+    _resolve(inbox, parse_notes(notes)[0].id, reject="x")
+    assert (inbox / "done" / "freeform-oneline.md").stat().st_mode & 0o777 == 0o644
+    assert notes.stat().st_mode & 0o777 == 0o640
+    note_done = inbox / "done" / "2026-10-30-waybar-clock-drifts-after-resume.md"
+    assert note_done.stat().st_mode & 0o777 == 0o640
