@@ -82,7 +82,9 @@ Shape:
 
 - **One private git repo, distinct refs.** Dolt can use a git repository as a remote, storing
   its data under a git ref (`dolt remote add --ref <ref>`, default `refs/dolt/data`). Each
-  project pushes under its own ref, `refs/dolt/<prefix>`, so all databases share one repo.
+  database pushes under its own ref, `refs/dolt/<database>`, so all databases share one repo.
+  Per database rather than per project, because a shared server's global database can serve
+  several projects; for embedded and one-database-per-project setups the two coincide.
   Ordinary clones do not fetch `refs/dolt/*`. **Verified 2026-11-02** (`bd-timew-ayn.3`, Dolt
   2.4.0): two databases pushed to `refs/dolt/one` and `refs/dolt/two` of one local bare repo
   without interfering; Dolt also creates a shared `refs/heads/__dolt_remote_info__` branch, and
@@ -91,8 +93,13 @@ Shape:
   a timeout (default 120 s, `global.dolt_push_timeout`). A failure or timeout is logged and never
   blocks other projects or other cleanup steps.
 - **Public-remote guard** (**built**, `bd-timew-ayn.3`): refuse the code repo's own remotes,
-  public GitHub repos (unauthenticated API check) and unverifiable hosts unless vouched for
-  (problem 3). The push always passes `--no-adopt`, since `bd dolt push` would otherwise offer
+  public GitHub repos (unauthenticated API check, after resolving the real host with
+  `git ls-remote --get-url` and `ssh -G`) and unverifiable hosts unless vouched for
+  (problem 3).
+- **Server mode** (**built**, `bd-timew-ayn.3`): remotes are read and added through SQL
+  (`dolt sql` for embedded, `bd sql` for servers). A timeout also kills the push inside the
+  server; that path and server credentials (`SSH_AUTH_SOCK` under systemd) still need a test
+  against a live shared server (follow-up bead). The push always passes `--no-adopt`, since `bd dolt push` would otherwise offer
   to adopt the git origin as its remote. Spec:
   [registry-schema.md, Dolt push](../registry-schema.md#dolt-push).
 - **Per-host switch** (`bd-timew-ayn.4`): `global.dolt_push` in `~/.config/bd-track/config.yaml`

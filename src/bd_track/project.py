@@ -682,11 +682,13 @@ def cmd_cleanup(
     commit: bool = False,
     project_dir: Path | None = None,
     project=None,
+    pushed: set[str] | None = None,
 ) -> None:
     """Run Beads/Dolt maintenance for the active project (or --project-dir).
 
     ``project`` is its registry entry when the caller has it (the cleanup service); otherwise
-    it is looked up by directory for the state export and Dolt push steps.
+    it is looked up by directory for the state export and Dolt push steps. ``pushed`` is the
+    cleanup service's set of databases already pushed this run (see ``doltpush.push_project``).
     """
     beads_dir = find_beads_dir(project_dir)
     project_root = beads_dir.parent.resolve()
@@ -736,7 +738,7 @@ def cmd_cleanup(
         target = _resolve_export(project, host, log)
         if target is not None:
             _export_issues(target, project_root, log)
-        push_project(project, project_root, host, log)
+        push_project(project, project_root, host, log, pushed)
 
     log.info("Cleanup complete")
 
@@ -756,6 +758,7 @@ def cmd_run_service() -> None:
         return
     state = _load_cleanup_state()
     now = dt.datetime.now(dt.timezone.utc)
+    pushed: set[str] = set()  # databases pushed this run; shared databases go once
 
     for project in projects:
         path = str(project.path)
@@ -782,6 +785,7 @@ def cmd_run_service() -> None:
                 commit=True,
                 project_dir=Path(path),
                 project=project,
+                pushed=pushed,
             )
             state.setdefault(path, {})["last_run"] = now.isoformat()
             _save_cleanup_state(state)

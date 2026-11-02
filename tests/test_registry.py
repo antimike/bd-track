@@ -439,7 +439,7 @@ def test_run_service_uses_registry_settings(two_projects, tmp_path: Path, monkey
     monkeypatch.setattr(
         project,
         "cmd_cleanup",
-        lambda days, commit, project_dir, project: calls.append((project_dir, days)),
+        lambda days, commit, project_dir, project, pushed: calls.append((project_dir, days)),
     )
     project.cmd_run_service()
     chz, amo = two_projects

@@ -268,7 +268,7 @@ def test_cleanup_pushes_after_export(tmp_path: Path, stub_bd, monkeypatch):
     pushed = []
     monkeypatch.setattr(
         doltpush, "push_project",
-        lambda project, root, host, log: pushed.append((project.name, len(calls))),
+        lambda project, root, host, log, done: pushed.append((project.name, len(calls))),
     )
     state = tmp_path / "state"
     state.mkdir()

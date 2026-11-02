@@ -3,14 +3,19 @@
 Design: docs/dev/design-beads-state-repo.md, "Dolt push"; keys: docs/registry-schema.md.
 
 - **Where**: ``beads.dolt_remote_url``, else ``global.dolt_remote_url``. bd-track provisions a
-  Dolt remote named ``bd-track-backup`` in the project's embedded database with
-  ``dolt remote add --ref refs/dolt/<prefix>``, so many projects share one repo.
-- **Guard**: never push to one of the code repo's own remotes. A github.com URL (or an ssh
-  alias host ending in ``.github.com``) must not be a public repo (unauthenticated API: 200 is
-  public, 404 is private or missing; anything else skips this run). A local path or ``file://``
-  URL is allowed. Any other host needs ``beads.dolt_remote_private: true``.
+  Dolt remote named ``bd-track-backup`` with ``CALL dolt_remote('add', '--ref',
+  'refs/dolt/<database>', ...)``, so many databases share one repo. One ref per *database*:
+  projects that share a database (a shared server's global database) push it once per run.
+- **Modes**: SQL goes through ``dolt sql`` in the database directory (embedded mode; ``bd sql``
+  does not support it) or ``bd sql`` (server modes).
+- **Guard**: never push to one of the code repo's own remotes. The URL's real host is resolved
+  (git ``insteadOf`` rewrites via ``git ls-remote --get-url``, then ``ssh -G`` for ssh aliases);
+  on ``github.com`` the repo must not be public (unauthenticated API: 200 is public, 404 is
+  private or missing; anything else skips this run). A local path or ``file://`` URL is allowed.
+  Any other host needs ``beads.dolt_remote_private: true``.
 - **Push**: ``bd dolt push --remote bd-track-backup --no-adopt`` (never let bd adopt the git
-  origin), in its own process group, killed after ``global.dolt_push_timeout`` seconds.
+  origin), in its own process group, killed after ``global.dolt_push_timeout`` seconds. In
+  server mode the push runs inside the server, so a timeout also kills the server-side query.
 - Every failure is logged and returns; nothing here raises into cleanup. The next run retries.
 
 WSL2 network stacks have stalled Dolt pushes; such hosts should set ``global.dolt_push: never``.
@@ -18,12 +23,16 @@ WSL2 network stacks have stalled Dolt pushes; such hosts should set ``global.dol
 
 from __future__ import annotations
 
+import csv
+import io
 import json
 import os
+import re
 import signal
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +42,11 @@ from bd_track.registry import Project, normalize_remote, switch_enabled
 REMOTE_NAME = "bd-track-backup"
 GITHUB_API = "https://api.github.com/repos/{slug}"
 API_TIMEOUT = 10
+SQL_TIMEOUT = 30
+RESOLVE_TIMEOUT = 10
+
+# [user@]host:path, but not scheme://
+_SCP_RE = re.compile(r"^(?:(?P<user>[^@/:]+)@)?(?P<host>[^/:]+):(?!//)(?P<path>.*)$")
 
 
 class PushSkipped(Exception):
@@ -61,17 +75,56 @@ def _local_path(url: str) -> Path | None:
     return None
 
 
-def _host(url: str) -> str | None:
-    """The host of an ssh/https/scp-style URL, lowercased."""
+def _as_url(url: str) -> str:
+    """``url`` without Dolt's ``git+`` prefix, with scp form rewritten as ``ssh://``."""
     url = url.removeprefix("git+")
-    if "://" in url:
-        rest = url.split("://", 1)[1]
-    elif ":" in url:  # scp form: [user@]host:path
-        rest = url.split(":", 1)[0]
-    else:
+    match = _SCP_RE.match(url)
+    if match and "://" not in url:
+        user = f"{match['user']}@" if match["user"] else ""
+        return f"ssh://{user}{match['host']}/{match['path'].lstrip('/')}"
+    return url
+
+
+def _git_rewrite(url: str) -> str:
+    """Apply git's ``url.<base>.insteadOf`` rules, as git (and so Dolt) would."""
+    try:
+        result = subprocess.run(
+            ["git", "ls-remote", "--get-url", url],
+            check=False, text=True, capture_output=True, timeout=RESOLVE_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return url
+    if result.returncode != 0:
+        return url
+    return result.stdout.strip() or url
+
+
+def _ssh_hostname(host: str) -> str:
+    """The host ssh really connects to for ``host`` (``ssh -G``: aliases, Include, Match)."""
+    try:
+        result = subprocess.run(
+            ["ssh", "-G", host],
+            check=False, text=True, capture_output=True, timeout=RESOLVE_TIMEOUT,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return host
+    for line in result.stdout.splitlines():
+        key, _, value = line.partition(" ")
+        if key == "hostname" and value:
+            return value.strip().lower()
+    return host
+
+
+def resolve_host(url: str) -> str | None:
+    """The real host a remote URL connects to, or None for a local URL or an unparsable one."""
+    url = _git_rewrite(url.removeprefix("git+"))
+    if _local_path(url) is not None:
         return None
-    host = rest.split("/", 1)[0].rsplit("@", 1)[-1].split(":", 1)[0]
-    return host.lower() or None
+    parsed = urllib.parse.urlsplit(_as_url(url))
+    host = (parsed.hostname or "").lower() or None
+    if host and parsed.scheme in ("ssh", "git+ssh"):
+        return _ssh_hostname(host)
+    return host
 
 
 def same_repo(a: str, b: str) -> bool:
@@ -123,10 +176,9 @@ def check_remote(url: str, project: Project, project_root: Path) -> None:
             raise PushSkipped(f"{url} is a remote of the code repo ({code}); refusing")
     if _local_path(url) is not None:
         return
-    host = _host(url)
+    host = resolve_host(url)
     slug = normalize_remote(url.removeprefix("git+"))
-    # ``<alias>.github.com`` covers ssh config aliases such as ``antimike.github.com``.
-    if host and (host == "github.com" or host.endswith(".github.com")) and slug:
+    if host == "github.com" and slug:
         if github_is_public(slug):
             raise PushSkipped(f"{url} is a public GitHub repo; refusing")
         return
@@ -139,58 +191,87 @@ def check_remote(url: str, project: Project, project_root: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Provisioning
+# The database: embedded (dolt sql in its directory) or server (bd sql)
 # ---------------------------------------------------------------------------
 
 
-def dolt_dir(project_root: Path) -> Path:
-    """The embedded Dolt database directory; ``PushSkipped`` for other modes."""
-    found = [p.parent for p in (project_root / ".beads" / "embeddeddolt").glob("*/.dolt")]
-    if len(found) != 1:
-        raise PushSkipped(
-            "no single embedded Dolt database under .beads/embeddeddolt/ "
-            "(server mode is not supported by the push step yet)"
-        )
-    return found[0]
+def sql_literal(value: str) -> str:
+    return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'"
 
 
-def _remotes(db: Path) -> dict[str, tuple[str, str | None]]:
-    """``dolt remote -v``: name -> (url, git ref or None)."""
-    result = subprocess.run(
-        ["dolt", "remote", "-v"], cwd=db, check=False, text=True, capture_output=True,
-    )
-    if result.returncode != 0:
-        raise PushSkipped(f"dolt remote -v failed: {result.stderr.strip()}")
-    remotes = {}
-    for line in result.stdout.splitlines():
-        parts = line.split(None, 2)
-        if len(parts) < 2:
-            continue
-        ref = None
-        if len(parts) == 3:
-            try:
-                ref = json.loads(parts[2]).get("git_ref")
-            except (json.JSONDecodeError, AttributeError):
-                ref = None
-        remotes[parts[0]] = (parts[1], ref)
-    return remotes
+@dataclass
+class Database:
+    """A project's Dolt database and how to run SQL in it."""
+
+    name: str
+    key: str  # identity across projects, for one push per database per run
+    project_root: Path
+    directory: Path | None = None  # embedded mode
+
+    @property
+    def server(self) -> bool:
+        return self.directory is None
+
+    def sql(self, query: str) -> list[dict[str, str]]:
+        """Run ``query``; rows as dicts (CSV output of both tools). ``PushSkipped`` on error."""
+        if self.directory is not None:
+            argv, cwd = ["dolt", "sql", "-r", "csv", "-q", query], self.directory
+        else:
+            argv, cwd = ["bd", "sql", "--csv", query], self.project_root
+        try:
+            result = subprocess.run(
+                argv, cwd=cwd, check=False, text=True, capture_output=True, timeout=SQL_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as err:
+            raise PushSkipped(f"SQL timed out after {SQL_TIMEOUT}s: {query}") from err
+        if result.returncode != 0:
+            raise PushSkipped(f"SQL failed ({query}): {result.stderr.strip()}")
+        text = result.stdout.strip()
+        if not text or text == "OK":
+            return []
+        return list(csv.DictReader(io.StringIO(text)))
 
 
-def ensure_remote(db: Path, url: str, ref: str, log) -> None:
+def open_database(project_root: Path) -> Database:
+    """Find the project's database: one embedded store, else ask bd's server connection."""
+    embedded = [p.parent for p in (project_root / ".beads" / "embeddeddolt").glob("*/.dolt")]
+    if len(embedded) == 1:
+        directory = embedded[0].resolve()
+        return Database(directory.name, f"embedded:{directory}", project_root, directory)
+    if len(embedded) > 1:
+        raise PushSkipped("more than one embedded Dolt database under .beads/embeddeddolt/")
+    probe = Database("", "", project_root)
+    rows = probe.sql("SELECT database() AS db")
+    name = rows[0].get("db", "") if rows else ""
+    if not name:
+        raise PushSkipped("cannot tell which server database the project uses")
+    return Database(name, f"server:{name}", project_root)
+
+
+def remotes(db: Database) -> dict[str, tuple[str, str | None]]:
+    """name -> (url, git ref or None), from the ``dolt_remotes`` system table."""
+    found = {}
+    for row in db.sql("SELECT name, url, params FROM dolt_remotes"):
+        try:
+            ref = json.loads(row.get("params") or "{}").get("git_ref")
+        except (json.JSONDecodeError, AttributeError):
+            ref = None
+        found[row["name"]] = (row.get("url", ""), ref)
+    return found
+
+
+def ensure_remote(db: Database, url: str, ref: str, log) -> None:
     """Add (or re-point) the ``bd-track-backup`` remote; bd-track owns that name."""
-    current = _remotes(db).get(REMOTE_NAME)
+    current = remotes(db).get(REMOTE_NAME)
     if current is not None:
         if same_repo(current[0], url) and current[1] == ref:
             return
         log.info("push: re-pointing remote %s (was %s %s)", REMOTE_NAME, *current)
-        subprocess.run(["dolt", "remote", "remove", REMOTE_NAME], cwd=db, check=False,
-                       capture_output=True)
-    result = subprocess.run(
-        ["dolt", "remote", "add", "--ref", ref, REMOTE_NAME, url],
-        cwd=db, check=False, text=True, capture_output=True,
+        db.sql(f"CALL dolt_remote('remove', {sql_literal(REMOTE_NAME)})")
+    db.sql(
+        f"CALL dolt_remote('add', '--ref', {sql_literal(ref)}, "
+        f"{sql_literal(REMOTE_NAME)}, {sql_literal(url)})"
     )
-    if result.returncode != 0:
-        raise PushSkipped(f"dolt remote add failed: {result.stderr.strip()}")
     log.info("push: added remote %s -> %s (%s)", REMOTE_NAME, url, ref)
 
 
@@ -198,8 +279,30 @@ def ensure_remote(db: Path, url: str, ref: str, log) -> None:
 # Push
 # ---------------------------------------------------------------------------
 
-
 PUSH_ARGV = ("bd", "dolt", "push", "--remote", REMOTE_NAME, "--no-adopt")
+
+# The server-side push bd-track started: its CALL names our remote. Our own connection is
+# excluded, since this query's text matches too.
+_SERVER_PUSH_QUERY = (
+    "SELECT id FROM information_schema.processlist "
+    f"WHERE info LIKE '%dolt_push%{REMOTE_NAME}%' AND id <> CONNECTION_ID()"
+)
+
+
+def kill_server_push(db: Database, log) -> None:
+    """After a client-side timeout in server mode, stop the push still running in the server.
+
+    Not yet tested against a live shared server (follow-up bead); failures are logged only.
+    """
+    try:
+        ids = [row["id"] for row in db.sql(_SERVER_PUSH_QUERY) if row.get("id", "").isdigit()]
+        for query_id in ids:
+            db.sql(f"KILL QUERY {query_id}")
+            log.info("push: killed server-side push query %s", query_id)
+        if not ids:
+            log.info("push: no server-side push query left to kill")
+    except PushSkipped as err:
+        log.error("push: could not kill the server-side push: %s", err)
 
 
 def run_push(project_root: Path, timeout: float, argv: tuple[str, ...] = PUSH_ARGV) -> PushResult:
@@ -223,8 +326,19 @@ def run_push(project_root: Path, timeout: float, argv: tuple[str, ...] = PUSH_AR
     return PushResult(proc.returncode == 0, duration, detail[0])
 
 
-def push_project(project: Project, project_root: Path, host: dict, log) -> PushResult | None:
-    """The whole push step for one project. Returns the push result, or None if not pushed."""
+def push_project(
+    project: Project,
+    project_root: Path,
+    host: dict,
+    log,
+    pushed: set[str] | None = None,
+) -> PushResult | None:
+    """The whole push step for one project. Returns the push result, or None if not pushed.
+
+    ``pushed`` holds the keys of databases already tried this run (the cleanup service passes
+    one set for all projects), so a database shared by several projects is pushed once, and a
+    stalled one is not retried by each of its projects.
+    """
     phase = "Phase 5/5: dolt push"
     if not switch_enabled(host["dolt_push"], project.beads.get("dolt_push")):
         log.info("%s (off for this project)", phase)
@@ -233,18 +347,25 @@ def push_project(project: Project, project_root: Path, host: dict, log) -> PushR
     if not url:
         log.error("%s (skipped — push is on but no dolt_remote_url is configured)", phase)
         return None
-    prefix = project.beads.get("prefix") or project.name
-    ref = f"refs/dolt/{prefix}"
-    log.info("%s to %s (%s)", phase, url, ref)
     try:
+        db = open_database(project_root)
+        if pushed is not None and db.key in pushed:
+            log.info("%s (database %s already tried this run)", phase, db.name)
+            return None
+        ref = f"refs/dolt/{db.name}"
+        log.info("%s of %s to %s (%s)", phase, db.name, url, ref)
         check_remote(url, project, project_root)
-        ensure_remote(dolt_dir(project_root), url, ref, log)
+        ensure_remote(db, url, ref, log)
     except PushSkipped as err:
         log.error("push skipped: %s", err)
         return None
+    if pushed is not None:
+        pushed.add(db.key)
     result = run_push(project_root, host["dolt_push_timeout"])
     if result.ok:
         log.info("push: ok in %.1fs (%s)", result.duration, result.detail)
     else:
         log.error("push failed in %.1fs: %s (retried next run)", result.duration, result.detail)
+        if db.server and result.detail.startswith("timed out"):
+            kill_server_push(db, log)
     return result

@@ -119,20 +119,31 @@ When `dolt_push` resolves to on, `cleanup` pushes the project's Dolt database af
 Design: [dev/design-beads-state-repo.md](dev/design-beads-state-repo.md#dolt-push-provisional).
 
 - **Where:** `beads.dolt_remote_url`, else `global.dolt_remote_url`, a git repo that may hold
-  many projects. bd-track adds a Dolt remote named `bd-track-backup` to the project's database
-  with `dolt remote add --ref refs/dolt/<prefix>`, so each project has its own ref, and re-points
-  it when the URL or ref changes. Use a URL Dolt reads as git (`git@host:owner/repo.git`, an
-  `https://…/repo.git`, or a local path). The repo needs at least one branch before the first
-  push. Embedded mode only for now; server-mode projects are skipped with a message.
-- **Guard:** bd-track refuses a URL that names one of the code repo's own git remotes. A GitHub
-  URL (including ssh alias hosts ending in `.github.com`) is checked through the unauthenticated
-  GitHub API: a public repo is refused, a private or missing one (404) is allowed, and any other
-  answer skips the push for this run. Local paths and `file://` are allowed. Any other host is
-  refused unless the project sets `beads.dolt_remote_private: true`.
+  many databases. bd-track adds a Dolt remote named `bd-track-backup` to the project's database
+  (`CALL dolt_remote('add', '--ref', 'refs/dolt/<database>', …)`), so each database has its
+  own ref, and re-points it when the URL or ref changes. Use a URL Dolt reads as git
+  (`git@host:owner/repo.git`, an `https://…/repo.git`, or a local path). The repo needs at least
+  one branch before the first push.
+- **Modes:** embedded databases are reached with `dolt sql` in their directory, server-mode
+  databases (a shared server, or the global database) with `bd sql`. The ref is named after the
+  **database**, not the project: projects sharing a database push it once per cleanup run (the
+  first such project with push on decides the URL). A server that is down skips the push.
+- **Guard:** bd-track refuses a URL that names one of the code repo's own git remotes. It then
+  resolves the URL's real host: git's `url.<base>.insteadOf` rewrites (`git ls-remote
+  --get-url`), then, for ssh, the host ssh really connects to (`ssh -G`, so aliases, `Include`
+  and `Match` count). On `github.com` the repo is checked through the unauthenticated GitHub
+  API: a public repo is refused, a private or missing one (404) is allowed, and any other answer
+  skips the push for this run. Local paths and `file://` are allowed. Any other host (including
+  GitHub Enterprise) is refused unless the project sets `beads.dolt_remote_private: true`.
 - **Push:** `bd dolt push --remote bd-track-backup --no-adopt` (bd never adopts the git origin
   as a remote), killed with its child processes after `global.dolt_push_timeout` seconds.
   Failures and timeouts are logged and retried on the next cleanup; they never stop cleanup or
   other projects. Each project's bd `no-push` setting stays on: only cleanup pushes.
+- **Server mode caveats:** the push runs inside the Dolt server, so (1) after a timeout
+  bd-track also kills the server-side push query (`information_schema.processlist`, `KILL
+  QUERY`); not yet tested against a live shared server; and (2) git credentials come from the
+  server's environment: a server started by a systemd unit needs `SSH_AUTH_SOCK` (or another
+  credential source) for ssh pushes.
 
 ### State export
 
@@ -232,5 +243,5 @@ implement.
 | 2026-10-30 | Scan roots come from `global.scan_roots` or `$BD_TRACK_SCAN_ROOTS`, with no default (no scan unless configured); two or more clones of a remote resolve to none, with a warning; every beads project with a known clone is a cleanup target (`bd-timew-d0t.3`, MH). |
 | 2026-10-30 | `global.dolt_push` takes `always`/`never` (force) or `true`/`false` (default, overridden per project). Supersedes `bd-timew-ayn.4`'s "per-project override" wording. |
 | 2026-11-01 | State export: `global.state_export` is a four-valued switch like `dolt_push`; `beads.state_repo` is `true`/`false` or a path (on, and that repo); `global.state_repo` is the default repo and `global.state_layout` a `{project}` template, default `{project}/issues.jsonl` (`bd-timew-ayn.2`, MH). |
-| 2026-11-02 | Dolt push: bd-track provisions a `bd-track-backup` remote per project from `dolt_remote_url` (project, else host) under `refs/dolt/<prefix>`; the guard refuses code remotes and public GitHub repos (API check) and other hosts unless `beads.dolt_remote_private: true`; `global.dolt_push_timeout` (default 120 s) kills a stalled push (`bd-timew-ayn.3`, MH). |
+| 2026-11-02 | Dolt push: bd-track provisions a `bd-track-backup` remote through SQL from `dolt_remote_url` (project, else host) under `refs/dolt/<database>`, in embedded and server modes, one push per database per run; the guard resolves the real host (`git ls-remote --get-url`, `ssh -G`), refuses code remotes and public GitHub repos (API check), and other hosts unless `beads.dolt_remote_private: true`; `global.dolt_push_timeout` (default 120 s) kills a stalled push, server-side too (`bd-timew-ayn.3`, MH). |
 | 2026-11-02 | The state export includes `bd remember` memories (`--include-memories`), with no setting: a backup that drops them loses data that exists only in `.beads/` (`bd-timew-ayn.2`, MH). |
