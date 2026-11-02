@@ -200,8 +200,8 @@ def stubbed(monkeypatch, tmp_path: Path):
         doltpush, "ensure_remote", lambda db, url, ref, log: calls.append(("remote", url, ref))
     )
     monkeypatch.setattr(
-        doltpush, "run_push", lambda root, timeout: calls.append(("push", timeout))
-        or PushResult(True, 0.1, "ok"),
+        doltpush, "run_push", lambda root, timeout, argv=doltpush.PUSH_ARGV:
+        calls.append(("push", timeout)) or PushResult(True, 0.1, "ok"),
     )
     return calls
 
@@ -258,7 +258,9 @@ def test_push_timeout_in_server_mode_kills_server_query(tmp_path: Path, stubbed,
         doltpush, "open_database", lambda root: FakeServerDB("beads_global", "server:g", root),
     )
     monkeypatch.setattr(
-        doltpush, "run_push", lambda root, timeout: PushResult(False, 120, "timed out after 120s"),
+        doltpush, "run_push",
+        lambda root, timeout, argv=doltpush.PUSH_ARGV:
+        PushResult(False, 120, "timed out after 120s"),
     )
     project = Project("amo", beads={"prefix": "amo"})
     doltpush.push_project(project, tmp_path, {**HOST, "dolt_remote_url": "/srv/b.git"}, log)
@@ -396,3 +398,79 @@ def test_timing_log_unwritable_is_ignored(tmp_path: Path):
     db = doltpush.Database("d", "k", tmp_path)
     doltpush.record_push(Project("p"), db, "u", PushResult(True, 1, "ok"),
                          log_path=blocker / "dolt-push.jsonl")  # parent is a file: no raise
+
+
+# ---------------------------------------------------------------------------
+# forced retry after a history rewrite (spike bd-timew-ayn.6)
+# ---------------------------------------------------------------------------
+
+REJECTED = PushResult(
+    False, 2.0, "hint: ...", " ! [rejected] main -> main (non-fast-forward)\nerror: failed"
+)
+
+
+def _scripted_push(monkeypatch, results: list[PushResult]) -> list:
+    calls = []
+
+    def fake(root, timeout, argv=doltpush.PUSH_ARGV):
+        calls.append((timeout, argv))
+        return results[len(calls) - 1]
+
+    monkeypatch.setattr(doltpush, "run_push", fake)
+    return calls
+
+
+def test_non_fast_forward_is_retried_with_force(tmp_path: Path, monkeypatch):
+    calls = _scripted_push(monkeypatch, [REJECTED, PushResult(True, 3.0, "Push complete.")])
+    result = doltpush.push_database(tmp_path, 120)
+    assert (result.ok, result.forced, result.duration) == (True, True, 5.0)
+    assert calls == [(120, doltpush.PUSH_ARGV), (118.0, doltpush.FORCE_ARGV)]
+
+
+@pytest.mark.parametrize(
+    "first",
+    [
+        PushResult(False, 2.0, "permission denied", "fatal: permission denied"),
+        PushResult(False, 120.0, "timed out after 120s", "timed out after 120s"),
+        PushResult(True, 1.0, "Push complete.", "Push complete."),
+    ],
+)
+def test_other_outcomes_are_not_forced(tmp_path: Path, monkeypatch, first):
+    calls = _scripted_push(monkeypatch, [first])
+    assert doltpush.push_database(tmp_path, 120).forced is False
+    assert len(calls) == 1
+
+
+def test_no_forced_retry_without_time_left(tmp_path: Path, monkeypatch):
+    late = PushResult(False, 120.0, "x", REJECTED.output)
+    calls = _scripted_push(monkeypatch, [late])
+    assert doltpush.push_database(tmp_path, 120).forced is False
+    assert len(calls) == 1
+
+
+@needs_dolt
+def test_push_after_compact_end_to_end(tmp_path: Path, push_log: Path):
+    remote = _bare_repo(tmp_path / "backup.git")
+    root = tmp_path / "proj"
+    root.mkdir()
+
+    def bd(*args):
+        subprocess.run(["bd", *args], cwd=root, check=True, capture_output=True)
+
+    bd("init", "--prefix", "cmp", "--quiet")
+    bd("create", "--silent", "--title", "before", "--type", "task")
+    bd("dolt", "commit", "-m", "before")
+    project = Project("proj", path=root, beads={"prefix": "cmp"})
+    host = {**HOST, "dolt_remote_url": str(remote)}
+    assert doltpush.push_project(project, root, host, log).forced is False
+
+    bd("compact", "--days", "0", "--force")  # rewrites history
+    bd("create", "--silent", "--title", "after", "--type", "task")
+    bd("dolt", "commit", "-m", "after")
+    result = doltpush.push_project(project, root, host, log)
+    assert (result.ok, result.forced) == (True, True)
+    assert _records(push_log)[-1]["forced"] is True
+
+    bd("create", "--silent", "--title", "later", "--type", "task")
+    bd("dolt", "commit", "-m", "later")
+    assert doltpush.push_project(project, root, host, log).forced is False  # fast-forward again

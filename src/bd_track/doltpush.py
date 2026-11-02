@@ -16,6 +16,8 @@ Design: docs/dev/design-beads-state-repo.md, "Dolt push"; keys: docs/registry-sc
 - **Push**: ``bd dolt push --remote bd-track-backup --no-adopt`` (never let bd adopt the git
   origin), in its own process group, killed after ``global.dolt_push_timeout`` seconds. In
   server mode the push runs inside the server, so a timeout also kills the server-side query.
+  A non-fast-forward rejection (after ``bd compact`` rewrote history) is retried with
+  ``--force`` within the same timeout.
 - Every failure is logged and returns; nothing here raises into cleanup. The next run retries.
 - **Timing log**: one JSON line per attempted push in
   ``~/.local/state/bd-track/dolt-push.jsonl`` (fields in ``PUSH_LOG_FIELDS``; how to read it:
@@ -52,7 +54,7 @@ PUSH_LOG = SESSION_STATE_DIR / "dolt-push.jsonl"
 PUSH_LOG_VERSION = 1  # bump when a field changes meaning; adding a field does not need it
 PUSH_LOG_FIELDS = (
     "v", "timestamp", "host", "project", "database", "mode", "remote", "db_bytes", "duration_s",
-    "result", "output",
+    "result", "forced", "output",
 )
 # Output tail kept per record. Keeps each line far below PIPE_BUF (4096 bytes), the size up to
 # which an O_APPEND write is atomic, so concurrent writers never interleave.
@@ -79,6 +81,7 @@ class PushResult:
     duration: float
     detail: str  # one line, for the cleanup log
     output: str = ""  # tail of the push's output, for the timing log
+    forced: bool = False  # a non-fast-forward rejection was retried with --force
 
 
 # ---------------------------------------------------------------------------
@@ -301,6 +304,7 @@ def ensure_remote(db: Database, url: str, ref: str, log) -> None:
 # ---------------------------------------------------------------------------
 
 PUSH_ARGV = ("bd", "dolt", "push", "--remote", REMOTE_NAME, "--no-adopt")
+FORCE_ARGV = (*PUSH_ARGV, "--force")
 
 # The server-side push bd-track started: its CALL names our remote. Our own connection is
 # excluded, since this query's text matches too.
@@ -346,6 +350,26 @@ def run_push(project_root: Path, timeout: float, argv: tuple[str, ...] = PUSH_AR
     duration = time.monotonic() - start
     lines = (out or "").strip().splitlines()
     return PushResult(proc.returncode == 0, duration, lines[-1] if lines else "", _tail(out))
+
+
+def push_database(project_root: Path, timeout: float) -> PushResult:
+    """Push; after a non-fast-forward rejection, push again with ``--force``.
+
+    ``bd compact`` (run by every cleanup) rewrites history, so the next plain push is rejected
+    as non-fast-forward (spike ``bd-timew-ayn.6``). The ref belongs to bd-track and the remote
+    passed the guard, so forcing is safe; it is limited to that rejection so any other failure
+    still shows. The retry gets what is left of the timeout.
+    """
+    result = run_push(project_root, timeout)
+    if result.ok or "non-fast-forward" not in result.output.lower():
+        return result
+    remaining = timeout - result.duration
+    if remaining <= 0:
+        return result
+    forced = run_push(project_root, remaining, FORCE_ARGV)
+    forced.duration += result.duration
+    forced.forced = True
+    return forced
 
 
 def _tail(out: str | None) -> str:
@@ -394,6 +418,7 @@ def record_push(
         "db_bytes": database_bytes(db),
         "duration_s": round(result.duration, 2),
         "result": outcome,
+        "forced": result.forced,
         "output": result.output[-OUTPUT_MAX:],
     }
     line = json.dumps(record, ensure_ascii=False) + "\n"
@@ -445,10 +470,13 @@ def push_project(
         return None
     if pushed is not None:
         pushed.add(db.key)
-    result = run_push(project_root, host["dolt_push_timeout"])
+    result = push_database(project_root, host["dolt_push_timeout"])
     record_push(project, db, url, result)
     if result.ok:
-        log.info("push: ok in %.1fs (%s)", result.duration, result.detail)
+        log.info(
+            "push: ok in %.1fs%s (%s)",
+            result.duration, " after a forced retry" if result.forced else "", result.detail,
+        )
     else:
         log.error("push failed in %.1fs: %s (retried next run)", result.duration, result.detail)
         if db.server and result.detail.startswith("timed out"):
