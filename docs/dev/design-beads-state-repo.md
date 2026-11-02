@@ -137,9 +137,13 @@ keep `claude-state` separate for now) is D71 open question 1, a chezmoi concern.
 answer changes nothing beyond the configured export path, which is why the layout is
 configurable.
 
-**`bd memories` export** (D71 open question 5, still open): memories live in `.beads/`; whether
-`bd export` includes them is to be checked when `bd-timew-ayn.2` is built, and whether to export
-them separately waits for MH.
+**`bd memories` export** (D71 open question 5): **answered for bd-track, MH 2026-11-02**:
+memories are backed up. The export runs `bd export --include-memories`, so memory records
+(`"_type":"memory"`) sit in the same file and `bd import` restores issues and memories together
+(verified with a scratch restore: 57 issues, 9 memories). bd leaves memories out by default as
+"sensitive agent context", which suits exports that get shared, not an opt-in private backup.
+Whether memories overlap with Claude auto-memory is a separate question about where knowledge
+lives, not about what is backed up.
 
 ## Independent decision: the shared Dolt server
 

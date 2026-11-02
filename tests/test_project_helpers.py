@@ -223,6 +223,7 @@ def test_cleanup_exports_after_gc(tmp_path: Path, stub_bd, monkeypatch):
     _cleanup(tmp_path, {"prefix": "amo", "state_repo": True}, {"state_repo": str(state)},
              monkeypatch)
     assert [c[:2] for c in calls] == [["bd", "compact"], ["bd", "gc"], ["bd", "export"]]
+    assert "--include-memories" in calls[-1]
     assert (state / "amo" / "issues.jsonl").read_text() == '{"id": "amo-1"}\n'
     assert not list((state / "amo").glob(".*.tmp"))
 

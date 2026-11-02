@@ -122,6 +122,8 @@ private git repo that another tool commits and pushes; bd-track never runs git i
   the field `{project}` (the registry name). Default `{project}/issues.jsonl`. For example, a
   repo laid out by project with a `beads/` directory each uses
   `projects/{project}/beads/issues.jsonl`.
+- The export holds the project's issues and its `bd remember` memories (`bd export
+  --include-memories`); `bd import` of the file restores both.
 - The repo directory must exist (bd-track does not create repos); the project's subdirectory
   is created. The file is replaced atomically, and a failed export keeps the previous file.
 - Export on with no repo known, a missing repo, or a failed export is logged; it never stops the
@@ -204,3 +206,4 @@ implement.
 | 2026-10-30 | Scan roots come from `global.scan_roots` or `$BD_TRACK_SCAN_ROOTS`, with no default (no scan unless configured); two or more clones of a remote resolve to none, with a warning; every beads project with a known clone is a cleanup target (`bd-timew-d0t.3`, MH). |
 | 2026-10-30 | `global.dolt_push` takes `always`/`never` (force) or `true`/`false` (default, overridden per project). Supersedes `bd-timew-ayn.4`'s "per-project override" wording. |
 | 2026-11-01 | State export: `global.state_export` is a four-valued switch like `dolt_push`; `beads.state_repo` is `true`/`false` or a path (on, and that repo); `global.state_repo` is the default repo and `global.state_layout` a `{project}` template, default `{project}/issues.jsonl` (`bd-timew-ayn.2`, MH). |
+| 2026-11-02 | The state export includes `bd remember` memories (`--include-memories`), with no setting: a backup that drops them loses data that exists only in `.beads/` (`bd-timew-ayn.2`, MH). |

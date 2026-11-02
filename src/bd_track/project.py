@@ -644,7 +644,8 @@ def _resolve_export(project, project_root: Path, log) -> tuple[Path, Path] | Non
 
 
 def _export_issues(target: tuple[Path, Path], project_root: Path, log) -> None:
-    """``bd export`` into the state repo's working tree, replacing the file atomically.
+    """``bd export`` (issues and ``bd remember`` memories) into the state repo's working tree,
+    replacing the file atomically. ``bd import`` of the file restores both.
 
     bd-track never commits or pushes the state repo; another tool does. A missing repo
     directory is an error (bd-track does not create repos), but the project subdirectory is
@@ -658,7 +659,8 @@ def _export_issues(target: tuple[Path, Path], project_root: Path, log) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     tmp = dest.with_name(f".{dest.name}.tmp")
     result = run(
-        ["bd", "export", "-o", str(tmp)], check=False, capture=True, cwd=project_root
+        ["bd", "export", "--include-memories", "-o", str(tmp)],
+        check=False, capture=True, cwd=project_root,
     )
     if result.returncode != 0:
         tmp.unlink(missing_ok=True)
