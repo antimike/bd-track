@@ -83,12 +83,18 @@ Shape:
 - **One private git repo, distinct refs.** Dolt can use a git repository as a remote, storing
   its data under a git ref (`dolt remote add --ref <ref>`, default `refs/dolt/data`). Each
   project pushes under its own ref, `refs/dolt/<prefix>`, so all databases share one repo.
-  Ordinary clones do not fetch `refs/dolt/*`. **Not yet tested**; `bd-timew-ayn.6` verifies it.
-- **Hard timeout, failure isolation** (`bd-timew-ayn.3`): after commit/compact/gc, push with a
-  timeout (default 120 s, configurable). A failure or timeout is logged and never blocks other
-  projects or other cleanup steps.
-- **Public-remote guard** (`bd-timew-ayn.3`): refuse to push to a remote that is the project's
-  code origin or a public repo (problem 3).
+  Ordinary clones do not fetch `refs/dolt/*`. **Verified 2026-11-02** (`bd-timew-ayn.3`, Dolt
+  2.4.0): two databases pushed to `refs/dolt/one` and `refs/dolt/two` of one local bare repo
+  without interfering; Dolt also creates a shared `refs/heads/__dolt_remote_info__` branch, and
+  the repo needs one branch before the first push. Compaction and restore: `bd-timew-ayn.6`.
+- **Hard timeout, failure isolation** (**built**, `bd-timew-ayn.3`): after the export, push with
+  a timeout (default 120 s, `global.dolt_push_timeout`). A failure or timeout is logged and never
+  blocks other projects or other cleanup steps.
+- **Public-remote guard** (**built**, `bd-timew-ayn.3`): refuse the code repo's own remotes,
+  public GitHub repos (unauthenticated API check) and unverifiable hosts unless vouched for
+  (problem 3). The push always passes `--no-adopt`, since `bd dolt push` would otherwise offer
+  to adopt the git origin as its remote. Spec:
+  [registry-schema.md, Dolt push](../registry-schema.md#dolt-push).
 - **Per-host switch** (`bd-timew-ayn.4`): `global.dolt_push` in `~/.config/bd-track/config.yaml`
   takes `always` / `never` (forced) or `true` / `false` (default, overridden per project by
   `beads.dolt_push` in the registry). Default `false`. Semantics:
