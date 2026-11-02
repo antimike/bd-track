@@ -176,3 +176,84 @@ def test_ensure_auto_push_disabled_handles_missing_trailing_newline(tmp_path):
     _ensure_auto_push_disabled(beads)
     out = cfg.read_text()
     assert "sync:\n  remote: foo\ndolt.auto-push: false\n" == out
+
+
+# ---------------------------------------------------------------------------
+# cleanup: state export step (bd stubbed)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def stub_bd(monkeypatch):
+    """Replace project.run: record argv; ``bd export -o <file>`` writes a line to <file>."""
+    from bd_track import project
+
+    calls: list[list[str]] = []
+    outcome = {"export_rc": 0}
+
+    def fake_run(argv, check=False, capture=False, cwd=None):
+        calls.append(argv)
+        rc = 0
+        if argv[:2] == ["bd", "export"]:
+            rc = outcome["export_rc"]
+            Path(argv[argv.index("-o") + 1]).write_text('{"id": "amo-1"}\n')
+        return subprocess.CompletedProcess(argv, rc, stdout="ok", stderr="boom" if rc else "")
+
+    monkeypatch.setattr(project, "run", fake_run)
+    return calls, outcome
+
+
+def _cleanup(tmp_path: Path, beads: dict, host: dict, monkeypatch):
+    from bd_track import project, registry
+    from bd_track.registry import Project
+
+    root = tmp_path / "amo"
+    (root / ".beads").mkdir(parents=True)
+    monkeypatch.setattr(registry, "load_host_config", lambda: {
+        "state_export": False, "state_repo": None,
+        "state_layout": "{project}/issues.jsonl", **host,
+    })
+    project.cmd_cleanup(7, project_dir=root, project=Project("amo", path=root, beads=beads))
+
+
+def test_cleanup_exports_after_gc(tmp_path: Path, stub_bd, monkeypatch):
+    calls, _ = stub_bd
+    state = tmp_path / "state"
+    state.mkdir()
+    _cleanup(tmp_path, {"prefix": "amo", "state_repo": True}, {"state_repo": str(state)},
+             monkeypatch)
+    assert [c[:2] for c in calls] == [["bd", "compact"], ["bd", "gc"], ["bd", "export"]]
+    assert (state / "amo" / "issues.jsonl").read_text() == '{"id": "amo-1"}\n'
+    assert not list((state / "amo").glob(".*.tmp"))
+
+
+def test_cleanup_export_off_by_default(tmp_path: Path, stub_bd, monkeypatch):
+    calls, _ = stub_bd
+    _cleanup(tmp_path, {"prefix": "amo"}, {"state_repo": str(tmp_path)}, monkeypatch)
+    assert ["bd", "export"] not in [c[:2] for c in calls]
+
+
+def test_cleanup_export_missing_repo_is_skipped(tmp_path: Path, stub_bd, monkeypatch):
+    calls, _ = stub_bd
+    _cleanup(tmp_path, {"prefix": "amo"},
+             {"state_export": "always", "state_repo": str(tmp_path / "nope")}, monkeypatch)
+    assert ["bd", "export"] not in [c[:2] for c in calls]
+    assert not (tmp_path / "nope").exists()
+
+
+def test_cleanup_export_failure_keeps_previous_file(tmp_path: Path, stub_bd, monkeypatch):
+    _, outcome = stub_bd
+    outcome["export_rc"] = 1
+    state = tmp_path / "state"
+    (state / "amo").mkdir(parents=True)
+    (state / "amo" / "issues.jsonl").write_text("previous\n")
+    _cleanup(tmp_path, {"prefix": "amo"},
+             {"state_export": "always", "state_repo": str(state)}, monkeypatch)
+    assert (state / "amo" / "issues.jsonl").read_text() == "previous\n"
+    assert not list((state / "amo").glob(".*.tmp"))
+
+
+def test_cleanup_export_config_error_does_not_raise(tmp_path: Path, stub_bd, monkeypatch):
+    calls, _ = stub_bd
+    _cleanup(tmp_path, {"prefix": "amo", "state_repo": True}, {}, monkeypatch)  # no repo
+    assert ["bd", "gc"] in [c[:2] for c in calls]

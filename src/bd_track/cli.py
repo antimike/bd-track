@@ -603,6 +603,11 @@ def get_cli_arguments() -> argparse.Namespace:
     p_cleanup = sub.add_parser(
         "cleanup",
         help="Compact Dolt history and run GC; optionally commit first.",
+        description=(
+            "Commit (with --commit), compact and GC the project's Beads database, then export "
+            "its issues to a state repo when global.state_export / beads.state_repo turn that "
+            "on (see docs/registry-schema.md). bd-track never commits or pushes the state repo."
+        ),
         formatter_class=HelpFormatter,
     )
     p_cleanup.add_argument("--days", type=int, default=7,

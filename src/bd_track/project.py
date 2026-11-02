@@ -619,13 +619,67 @@ def _install_systemd_units(check_interval: str, idle_stop_hours: int) -> None:
 # cleanup
 # ---------------------------------------------------------------------------
 
+def _resolve_export(project, project_root: Path, log) -> tuple[Path, Path] | None:
+    """The state export target for this cleanup, or ``None`` (off, unregistered, or broken)."""
+    from bd_track.registry import (
+        RegistryError,
+        load_host_config,
+        load_registry,
+        state_export_target,
+    )
+
+    try:
+        if project is None:
+            project = load_registry().for_directory(project_root)
+            if project is None:
+                log.info("Phase 4/4: export (skipped — project not in the registry)")
+                return None
+        target = state_export_target(project, load_host_config())
+    except RegistryError as err:
+        log.error("Phase 4/4: export (skipped — %s)", err)
+        return None
+    if target is None:
+        log.info("Phase 4/4: export (off for this project)")
+    return target
+
+
+def _export_issues(target: tuple[Path, Path], project_root: Path, log) -> None:
+    """``bd export`` into the state repo's working tree, replacing the file atomically.
+
+    bd-track never commits or pushes the state repo; another tool does. A missing repo
+    directory is an error (bd-track does not create repos), but the project subdirectory is
+    created.
+    """
+    repo, dest = target
+    log.info("Phase 4/4: export to %s", dest)
+    if not repo.is_dir():
+        log.error("export: state repo %s does not exist; skipping", repo)
+        return
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    tmp = dest.with_name(f".{dest.name}.tmp")
+    result = run(
+        ["bd", "export", "-o", str(tmp)], check=False, capture=True, cwd=project_root
+    )
+    if result.returncode != 0:
+        tmp.unlink(missing_ok=True)
+        log.error("export failed: %s", result.stderr.strip() or result.stdout.strip())
+        return
+    tmp.replace(dest)
+    log.info("export: wrote %s", dest)
+
+
 def cmd_cleanup(
     days: int,
     *,
     commit: bool = False,
     project_dir: Path | None = None,
+    project=None,
 ) -> None:
-    """Run Beads/Dolt maintenance for the active project (or --project-dir)."""
+    """Run Beads/Dolt maintenance for the active project (or --project-dir).
+
+    ``project`` is its registry entry when the caller has it (the cleanup service); otherwise
+    it is looked up by directory for the state export step.
+    """
     beads_dir = find_beads_dir(project_dir)
     project_root = beads_dir.parent.resolve()
     log = logging.LoggerAdapter(
@@ -635,7 +689,7 @@ def cmd_cleanup(
     log.info("Starting cleanup (days=%d, commit=%s)", days, commit)
 
     if commit:
-        log.info("Phase 1/3: dolt commit")
+        log.info("Phase 1/4: dolt commit")
         result = run(
             ["bd", "dolt", "commit"], check=False, capture=True, cwd=project_root
         )
@@ -644,9 +698,9 @@ def cmd_cleanup(
         else:
             log.info("dolt commit: %s", result.stdout.strip())
     else:
-        log.info("Phase 1/3: dolt commit (skipped — pass --commit to include)")
+        log.info("Phase 1/4: dolt commit (skipped — pass --commit to include)")
 
-    log.info("Phase 2/3: compact --days %d", days)
+    log.info("Phase 2/4: compact --days %d", days)
     result = run(
         ["bd", "compact", f"--days={days}", "--force"],
         check=False, capture=True, cwd=project_root,
@@ -656,7 +710,7 @@ def cmd_cleanup(
     else:
         log.info("compact: %s", result.stdout.strip())
 
-    log.info("Phase 3/3: gc")
+    log.info("Phase 3/4: gc")
     result = run(
         ["bd", "gc", "--skip-decay", "--force"],
         check=False, capture=True, cwd=project_root,
@@ -665,6 +719,10 @@ def cmd_cleanup(
         log.error("gc failed: %s", result.stderr.strip())
     else:
         log.info("gc: %s", result.stdout.strip())
+
+    target = _resolve_export(project, project_root, log)
+    if target is not None:
+        _export_issues(target, project_root, log)
 
     log.info("Cleanup complete")
 
@@ -709,6 +767,7 @@ def cmd_run_service() -> None:
                 days=project.beads.get("compact_days", 7),
                 commit=True,
                 project_dir=Path(path),
+                project=project,
             )
             state.setdefault(path, {})["last_run"] = now.isoformat()
             _save_cleanup_state(state)

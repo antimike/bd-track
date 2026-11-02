@@ -212,6 +212,9 @@ def test_host_config_defaults_and_sources(home: Path):
         "check_interval": "daily",
         "idle_stop_hours": 4,
         "dolt_push": False,
+        "state_export": False,
+        "state_repo": None,
+        "state_layout": "{project}/issues.jsonl",
         "defaults": {"statuses": [], "hooks": []},
     }
     registry.REPOS_CONFIG.write_text("global: {idle_stop_hours: 2}\nrepos: []\n")
@@ -232,6 +235,80 @@ def test_host_dolt_push_rejects_yaml11_booleans(home: Path, value: str):
 def test_host_dolt_push_accepts(home: Path, value: str, parsed):
     registry.HOST_CONFIG.write_text(f"global: {{dolt_push: {value}}}\n")
     assert load_host_config()["dolt_push"] == parsed
+
+
+@pytest.mark.parametrize("value", ["yes", "off", "sometimes"])
+def test_host_state_export_rejects_non_switch_values(home: Path, value: str):
+    registry.HOST_CONFIG.write_text(f"global: {{state_export: {value}}}\n")
+    with pytest.raises(RegistryError, match="state_export must be"):
+        load_host_config()
+
+
+@pytest.mark.parametrize(
+    "layout, problem",
+    [
+        ("issues.jsonl", "must contain"),
+        ("{name}/issues.jsonl", "only the field"),
+        ("/abs/{project}.jsonl", "relative path"),
+        ("../{project}.jsonl", "relative path"),
+    ],
+)
+def test_host_state_layout_validated(home: Path, layout: str, problem: str):
+    registry.HOST_CONFIG.write_text(f"global: {{state_layout: '{layout}'}}\n")
+    with pytest.raises(RegistryError, match=problem):
+        load_host_config()
+
+
+@pytest.mark.parametrize(
+    "host, project, expected",
+    [
+        ("never", True, False),
+        ("always", False, True),
+        (False, None, False),
+        (True, None, True),
+        (False, True, True),
+        (True, False, False),
+        (False, "~/state", True),
+    ],
+)
+def test_switch_enabled(host, project, expected):
+    assert registry.switch_enabled(host, project) is expected
+
+
+def _host(**over) -> dict:
+    return {"state_export": False, "state_repo": None,
+            "state_layout": "{project}/issues.jsonl", **over}
+
+
+def test_state_export_target(tmp_path: Path):
+    from bd_track.registry import Project, state_export_target
+
+    work = tmp_path / "work-state"
+    plain = Project("amo", beads={"prefix": "amo"})
+    on = Project("amo", beads={"prefix": "amo", "state_repo": True})
+    elsewhere = Project("client", beads={"prefix": "cl", "state_repo": str(work)})
+    host = _host(state_repo=str(tmp_path / "state"))
+
+    assert state_export_target(plain, host) is None  # default false, no override
+    assert state_export_target(on, host) == (
+        tmp_path / "state", tmp_path / "state" / "amo" / "issues.jsonl"
+    )
+    assert state_export_target(elsewhere, host) == (work, work / "client" / "issues.jsonl")
+    assert state_export_target(on, {**host, "state_export": "never"}) is None
+    d71 = {**host, "state_export": "always",
+           "state_layout": "projects/{project}/beads/issues.jsonl"}
+    assert state_export_target(plain, d71)[1] == (
+        tmp_path / "state" / "projects" / "amo" / "beads" / "issues.jsonl"
+    )
+
+
+def test_state_export_target_errors():
+    from bd_track.registry import Project, state_export_target
+
+    with pytest.raises(RegistryError, match="no state repo is configured"):
+        state_export_target(Project("amo", beads={"state_repo": True}), _host())
+    with pytest.raises(RegistryError, match="must be true, false or a path"):
+        state_export_target(Project("amo", beads={"state_repo": 3}), _host())
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +428,9 @@ def test_run_service_uses_registry_settings(two_projects, tmp_path: Path, monkey
     monkeypatch.setattr(project, "_load_cleanup_state", dict)
     monkeypatch.setattr(project, "_save_cleanup_state", lambda state: None)
     monkeypatch.setattr(
-        project, "cmd_cleanup", lambda days, commit, project_dir: calls.append((project_dir, days))
+        project,
+        "cmd_cleanup",
+        lambda days, commit, project_dir, project: calls.append((project_dir, days)),
     )
     project.cmd_run_service()
     chz, amo = two_projects

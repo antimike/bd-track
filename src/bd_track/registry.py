@@ -16,6 +16,8 @@ module implements them. Summary:
   more clones stays unresolved (pin one with ``path:``). With no roots configured, no scan runs.
 - **Host settings** (``global:``) come from ``~/.config/bd-track/config.yaml``, else the legacy
   ``repos.yaml`` ``global:``.
+- **Switches** (``dolt_push``, ``state_export``): the host value ``always``/``never`` forces,
+  ``true``/``false`` is a default that the project's ``beads.<key>`` overrides.
 - **Writes** round-trip with ruamel.yaml (comments, order and unknown keys survive), touch only
   bd-track-owned keys, and replace the file atomically. The legacy file is never written here.
 
@@ -53,7 +55,9 @@ SCAN_SKIP_DIRS = {"node_modules", ".venv", "venv", ".cache", ".tox", "__pycache_
 NAME_RE = re.compile(r"[a-z0-9][a-z0-9_-]*")
 
 # beads.* keys bd-track owns; ``prefix`` is shared (see the ownership table in the schema doc).
-BD_TRACK_BEADS_KEYS = ("commit_cadence", "compact_days", "statuses", "dolt_push", "server")
+BD_TRACK_BEADS_KEYS = (
+    "commit_cadence", "compact_days", "statuses", "dolt_push", "state_repo", "server",
+)
 SHARED_KEYS = ("remote", "path")
 
 _REMOTE_RE = re.compile(r"[:/](?P<owner>[^/:]+)/(?P<repo>[^/:]+?)(?:\.git)?/?$")
@@ -405,10 +409,16 @@ def resolve_clones(registry: Registry, *, scan: bool | None = None) -> None:
         _save_cache(cache)
 
 
+DEFAULT_STATE_LAYOUT = "{project}/issues.jsonl"
+SWITCH_KEYS = ("dolt_push", "state_export")
+
+
 def load_host_config() -> dict:
     """Host settings: ``config.yaml`` ``global:``, else legacy ``repos.yaml`` ``global:``.
 
-    Missing keys get defaults. ``dolt_push`` must be ``always``, ``never``, ``true`` or ``false``.
+    Missing keys get defaults. The switches (``dolt_push``, ``state_export``) must be
+    ``always``, ``never``, ``true`` or ``false``; ``state_layout`` must name ``{project}`` and
+    stay inside the state repo.
     """
     source = HOST_CONFIG if HOST_CONFIG.exists() else REPOS_CONFIG
     data = _read(source) if source.exists() else {}
@@ -416,17 +426,80 @@ def load_host_config() -> dict:
     host.setdefault("check_interval", "daily")
     host.setdefault("idle_stop_hours", 4)
     host.setdefault("dolt_push", False)
+    host.setdefault("state_export", False)
+    host.setdefault("state_repo", None)
+    host.setdefault("state_layout", DEFAULT_STATE_LAYOUT)
     defaults = dict(host.get("defaults") or {})
     defaults.setdefault("statuses", [])
     defaults.setdefault("hooks", [])
     host["defaults"] = defaults
-    value = host["dolt_push"]
-    if not (isinstance(value, bool) or value in ("always", "never")):
-        raise RegistryError(
-            f"{source}: global.dolt_push must be always, never, true or false "
-            f"(got {host['dolt_push']!r})"
-        )
+    for key in SWITCH_KEYS:
+        value = host[key]
+        if not (isinstance(value, bool) or value in ("always", "never")):
+            raise RegistryError(
+                f"{source}: global.{key} must be always, never, true or false (got {value!r})"
+            )
+    _check_layout(host["state_layout"], source)
     return host
+
+
+def _check_layout(layout: object, source: Path) -> None:
+    """A layout is a relative path template with exactly the field ``{project}``."""
+    problem = None
+    if not isinstance(layout, str):
+        problem = "must be a string"
+    else:
+        try:
+            rel = Path(layout.format(project="x"))
+        except (KeyError, IndexError, ValueError):
+            problem = "may use only the field {project}"
+        else:
+            if "{project}" not in layout:
+                problem = "must contain {project}"
+            elif rel.is_absolute() or ".." in rel.parts:
+                problem = "must be a relative path inside the state repo"
+    if problem:
+        raise RegistryError(f"{source}: global.state_layout {problem} (got {layout!r})")
+
+
+def switch_enabled(host_value: bool | str, project_value: object) -> bool:
+    """Resolve a four-valued host switch against a project's override (schema doc, dolt_push).
+
+    ``always``/``never`` force the result; ``true``/``false`` is the default, which a project
+    value overrides. Any non-boolean project value other than ``None`` (e.g. a path) counts as on.
+    """
+    if host_value in ("always", "never"):
+        return host_value == "always"
+    if project_value is None:
+        return bool(host_value)
+    if isinstance(project_value, bool):
+        return project_value
+    return True
+
+
+def state_export_target(project: Project, host: dict) -> tuple[Path, Path] | None:
+    """``(state repo, export file)`` for ``project``'s ``cleanup`` export, or ``None`` if off.
+
+    ``beads.state_repo`` is ``true``/``false`` or a path (on, and that repo instead of the
+    host's ``state_repo``). Raises ``RegistryError`` when export is on but no repo is known, or
+    the project value has the wrong type.
+    """
+    value = project.beads.get("state_repo")
+    if value is not None and not isinstance(value, (bool, str)):
+        raise RegistryError(
+            f"project {project.name}: beads.state_repo must be true, false or a path "
+            f"(got {value!r})"
+        )
+    if not switch_enabled(host["state_export"], value):
+        return None
+    repo = value if isinstance(value, str) else host.get("state_repo")
+    if not repo:
+        raise RegistryError(
+            f"project {project.name}: state export is on but no state repo is configured "
+            "(set global.state_repo, or a path in beads.state_repo)"
+        )
+    root = _expand(repo)
+    return root, root / host["state_layout"].format(project=project.name)
 
 
 def load_registry_or_exit(explicit: Path | None = None, *, scan: bool | None = None) -> Registry:
@@ -505,7 +578,10 @@ def set_project(name: str, values: dict, explicit: Path | None = None) -> Path:
     return target
 
 
-HOST_KEYS = ("check_interval", "idle_stop_hours", "dolt_push", "defaults", "scan_roots")
+HOST_KEYS = (
+    "check_interval", "idle_stop_hours", "dolt_push", "defaults", "scan_roots",
+    "state_export", "state_repo", "state_layout",
+)
 
 
 def set_host(values: dict) -> Path:
