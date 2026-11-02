@@ -112,9 +112,37 @@ Shape:
   data can decide whether the global rule relaxes for non-WSL hosts. Until then the session rule
   stands. Columns and how to read it:
   [registry-schema.md, Push timing log](../registry-schema.md#push-timing-log).
-- **Push after compaction** (`bd-timew-ayn.6`): `bd compact` rewrites history, so the next push
-  must replace the remote ref; check whether `bd dolt push` needs force (only when the remote is
-  ours). History growth is minor: compaction keeps databases at 0.4–1.5 MB.
+- **Push after compaction** (**built**, `bd-timew-ayn.6`): see the spike results below. The push
+  step retries a non-fast-forward rejection with `--force`. History growth is minor: compaction
+  keeps databases at 0.4–1.5 MB.
+
+### Spike results: push, compact, push, restore (2026-11-02, `bd-timew-ayn.6`)
+
+Run here instead of in a chezmoi session (MH's call). Scratch data only: two embedded bd
+databases (`alpha`, `beta`) pushed by the real push step to one local bare git repo; Dolt 2.4.0,
+bd 1.3.
+
+1. **Distinct refs work.** `refs/dolt/alpha` and `refs/dolt/beta` coexist; ordinary clones of
+   the repo fetch neither. Dolt adds a shared `refs/heads/__dolt_remote_info__` branch, and the
+   repo needs one branch before the first push.
+2. **A push after `bd compact` is rejected.** `bd compact --days 0` squashed 79 commits into one;
+   the next `bd dolt push` failed with `! [rejected] main -> main (non-fast-forward)` and the ref
+   did not move. `bd dolt push --force` then succeeded and moved only alpha's ref.
+3. **Restore works from each ref.** `dolt clone --ref refs/dolt/<db>` restored alpha (4 issues,
+   including one created after the compaction) and beta (3). A cloned database dropped into a
+   fresh `bd init` project's `.beads/embeddeddolt/<db>` works with `bd list`. The clone keeps a
+   Dolt remote `origin` pointing at the backup repo.
+4. **`bd dolt remote reset-data` is per database.** On alpha it deleted and rebuilt
+   `refs/dolt/alpha` and the shared `__dolt_remote_info__` branch; beta's ref was untouched and
+   still restored, and both databases pushed normally afterwards. bd-track does not run it:
+   GitHub drops unreferenced objects on its own schedule.
+
+**Open (for MH): one ref per database, shared by hosts.** A project registered on two hosts has
+two databases with the same name, pushing to the same `refs/dolt/<database>`. With the forced
+retry, the last host to push replaces the other's history in the backup (each host's own
+database is unaffected). Options: accept it (the backup is a disaster copy of whichever host
+pushed last), set `dolt_push` on one host only, or qualify refs by host
+(`refs/dolt/<host>/<database>`), which keeps every host's copy at the cost of more refs.
 - **bd's own `no-push` stays on** in each project: only the cleanup timer pushes.
 
 > **WSL2 warning.** Dolt pushes have stalled on WSL2 network stacks (MTU/PMTU black holes, TCP

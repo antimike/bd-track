@@ -141,6 +141,12 @@ Design: [dev/design-beads-state-repo.md](dev/design-beads-state-repo.md#dolt-pus
   as a remote), killed with its child processes after `global.dolt_push_timeout` seconds.
   Failures and timeouts are logged and retried on the next cleanup; they never stop cleanup or
   other projects. Each project's bd `no-push` setting stays on: only cleanup pushes.
+- **After compaction:** `bd compact` rewrites history, so the next plain push is rejected as
+  non-fast-forward. bd-track then pushes again with `--force` (the ref is its own and the remote
+  passed the guard), within what is left of the timeout. Any other failure is not forced.
+- **Restore:** `dolt clone --ref refs/dolt/<database> <url> <dir>`; for an embedded project,
+  `bd init --prefix <prefix>` in a fresh clone, then replace `.beads/embeddeddolt/<database>`
+  with the cloned directory.
 - **Server mode caveats:** the push runs inside the Dolt server, so (1) after a timeout
   bd-track also kills the server-side push query (`information_schema.processlist`, `KILL
   QUERY`); not yet tested against a live shared server; and (2) git credentials come from the
@@ -166,6 +172,7 @@ pushes are safe outside a session). bd-track never trims it; delete it to start 
 | `db_bytes` | On-disk size of the embedded database in bytes (a proxy: the push sends only new chunks); `null` in server mode |
 | `duration_s` | Wall-clock seconds (number), including a timed-out push's full wait |
 | `result` | `"ok"`, `"failed"`, or `"timeout"` (killed after `dolt_push_timeout`) |
+| `forced` | `true` when a non-fast-forward rejection (after a compaction) was retried with `--force`; `duration_s` covers both attempts |
 | `output` | Last 5 lines of `bd dolt push` output, verbatim, at most 1000 characters |
 
 Each line is written with one append-mode `write()` and stays far below 4096 bytes, so
