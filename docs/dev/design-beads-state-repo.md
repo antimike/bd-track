@@ -106,9 +106,12 @@ Shape:
   takes `always` / `never` (forced) or `true` / `false` (default, overridden per project by
   `beads.dolt_push` in the registry). Default `false`. Semantics:
   [registry-schema.md, `dolt_push`](../registry-schema.md#dolt_push).
-- **Timing log** (`bd-timew-ayn.5`): one TSV line per push (timestamp, project, bytes if known,
-  duration, result), so about two weeks of zbook data can decide whether the global rule relaxes
-  for non-WSL hosts. Until then the session rule stands.
+- **Timing log** (**built**, `bd-timew-ayn.5`): one TSV line per attempted push in
+  `~/.local/state/bd-track/dolt-push.tsv` (timestamp, host, project, database, mode, remote,
+  database size as a proxy for bytes, duration, result, detail), so about two weeks of zbook
+  data can decide whether the global rule relaxes for non-WSL hosts. Until then the session rule
+  stands. Columns and how to read it:
+  [registry-schema.md, Push timing log](../registry-schema.md#push-timing-log).
 - **Push after compaction** (`bd-timew-ayn.6`): `bd compact` rewrites history, so the next push
   must replace the remote ref; check whether `bd dolt push` needs force (only when the remote is
   ours). History growth is minor: compaction keeps databases at 0.4–1.5 MB.
