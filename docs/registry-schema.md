@@ -41,6 +41,7 @@ projects:
       compact_days: 7
       statuses: [review]
       dolt_push: false
+      state_repo: true
       server: { enabled: true, pass_path: beads/amontillado, dolt_user: amontillado }
 ```
 
@@ -54,6 +55,7 @@ projects:
 | `beads.compact_days` | bd-track | `bd compact --days` value for `cleanup`. Default `7`. |
 | `beads.statuses` | bd-track | Custom bd statuses `init-project` enables (names only, no `:category`). |
 | `beads.dolt_push` | bd-track | `true` / `false`: per-project Dolt push choice, subject to the host setting ([dolt_push](#dolt_push)). Absent: the host default applies. |
+| `beads.state_repo` | bd-track | `true` / `false`, or a path: per-project state export choice, subject to the host setting ([state export](#state-export)). A path turns export on and names the state repo for this project instead of `global.state_repo`. Absent: the host default applies. |
 | `beads.server` | bd-track | Shared Dolt server wiring written by `init-project --server`: `enabled`, `pass_path`, `dolt_user`. |
 
 Other top-level project keys (for example a future `triage:` flag) are added by the tool that owns
@@ -70,6 +72,9 @@ global:
   check_interval: daily       # systemd timer cadence for bd-track cleanup
   idle_stop_hours: 4          # 0 disables the idle-stop timer
   dolt_push: false            # always | never | true | false
+  state_export: false         # always | never | true | false
+  state_repo: ~/state         # path of the state repo's working tree (none: no default repo)
+  state_layout: "{project}/issues.jsonl"   # export file inside the state repo
   scan_roots: []              # where to look for clones of remote-only projects (none: no scan)
   defaults:
     statuses: []
@@ -102,6 +107,27 @@ The global value either sets a default or forces a value; YAML types keep the tw
 
 Any other value is an error. `on`, `off`, `yes` and `no` are rejected rather than read as YAML 1.1
 booleans. Hosts with unreliable network stacks (WSL2) should use `never`.
+
+### State export
+
+`cleanup` can `bd export` each project's issues into the working tree of a **state repo**, a
+private git repo that another tool commits and pushes; bd-track never runs git in it. Design:
+[dev/design-beads-state-repo.md](dev/design-beads-state-repo.md).
+
+- `global.state_export` is a switch with the same four values and semantics as
+  [`dolt_push`](#dolt_push), overridden per project by `beads.state_repo`. A path in
+  `beads.state_repo` counts as `true`.
+- The export goes to `<repo>/<state_layout>`, where `<repo>` is the project's
+  `beads.state_repo` path, else `global.state_repo`, and `state_layout` is a relative path with
+  the field `{project}` (the registry name). Default `{project}/issues.jsonl`. For example, a
+  repo laid out by project with a `beads/` directory each uses
+  `projects/{project}/beads/issues.jsonl`.
+- The repo directory must exist (bd-track does not create repos); the project's subdirectory
+  is created. The file is replaced atomically, and a failed export keeps the previous file.
+- Export on with no repo known, a missing repo, or a failed export is logged; it never stops the
+  rest of `cleanup` or other projects.
+- The default (`false`) exports nothing: with client or employer data in some projects, a
+  project should reach a personal repo only by choice.
 
 ## Resolving a project
 
@@ -177,3 +203,4 @@ implement.
 | 2026-10-30 | `migrate registry --apply` renames `repos.yaml` to `repos.yaml.migrated` once every entry has moved; it copies `global:` to `config.yaml` only when that file is missing; `init-project` records its host keys in `config.yaml` (round-trip). Migrated projects get `beads.prefix` from the clone, and their paths are seeded into the path cache (`bd-timew-d0t.4`, MH). |
 | 2026-10-30 | Scan roots come from `global.scan_roots` or `$BD_TRACK_SCAN_ROOTS`, with no default (no scan unless configured); two or more clones of a remote resolve to none, with a warning; every beads project with a known clone is a cleanup target (`bd-timew-d0t.3`, MH). |
 | 2026-10-30 | `global.dolt_push` takes `always`/`never` (force) or `true`/`false` (default, overridden per project). Supersedes `bd-timew-ayn.4`'s "per-project override" wording. |
+| 2026-11-01 | State export: `global.state_export` is a four-valued switch like `dolt_push`; `beads.state_repo` is `true`/`false` or a path (on, and that repo); `global.state_repo` is the default repo and `global.state_layout` a `{project}` template, default `{project}/issues.jsonl` (`bd-timew-ayn.2`, MH). |

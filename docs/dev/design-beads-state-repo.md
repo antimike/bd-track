@@ -61,10 +61,11 @@ assumes no particular dotfiles manager or repo layout.
 
 ### Proposed bd-track changes (to be refined)
 
-- Configuration: the state repo path(s) and per-project choice of state repo, or none. Host
-  paths belong in `~/.config/bd-track/config.yaml`; a per-project choice would be a new
-  bd-track-owned `beads.*` key, added to the registry schema's key table when settled.
-- `cleanup`: the export step (`bd-timew-ayn.2`).
+- Configuration (**built**, `bd-timew-ayn.2`): `global.state_export` (four-valued switch),
+  `global.state_repo` and `global.state_layout` in `~/.config/bd-track/config.yaml`, and
+  per-project `beads.state_repo` (`true`/`false` or a path, which covers option (b) below).
+  Spec: [registry-schema.md, State export](../registry-schema.md#state-export).
+- `cleanup`: the export step, phase 4 after commit/compact/gc (**built**, `bd-timew-ayn.2`).
 - `bd-track state restore <project>`: import a project's export into a fresh `.beads/`.
 - `bd-track state status`: which projects export where, and when each was last exported.
 
