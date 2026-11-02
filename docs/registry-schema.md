@@ -147,11 +147,18 @@ Design: [dev/design-beads-state-repo.md](dev/design-beads-state-repo.md#dolt-pus
 - **Restore:** `dolt clone --ref refs/dolt/<database> <url> <dir>`; for an embedded project,
   `bd init --prefix <prefix>` in a fresh clone, then replace `.beads/embeddeddolt/<database>`
   with the cloned directory.
-- **Server mode caveats:** the push runs inside the Dolt server, so (1) after a timeout
-  bd-track also kills the server-side push query (`information_schema.processlist`, `KILL
-  QUERY`); not yet tested against a live shared server; and (2) git credentials come from the
-  server's environment: a server started by a systemd unit needs `SSH_AUTH_SOCK` (or another
-  credential source) for ssh pushes.
+- **Server mode:** the push runs inside the Dolt server (`CALL DOLT_PUSH('bd-track-backup',
+  'main')`). Verified against a scratch `dolt sql-server` (`bd-timew-ayn.7`):
+  - When bd-track kills a timed-out `bd dolt push`, the server cancels the query on disconnect
+    and leaves no git or ssh process behind. If the query is still listed, bd-track kills it
+    (`information_schema.processlist`, `KILL QUERY`), which also works.
+  - Git credentials come from the **server's** environment, not the caller's. For ssh, either
+    the server process has `SSH_AUTH_SOCK`, or the ssh config names the agent itself
+    (`IdentityAgent`, e.g. a gpg-agent socket) or a key file. A server started by a systemd
+    unit without either cannot authenticate; the push fails and the error is logged. A hardware
+    key that is not plugged in fails the same way.
+  - Projects sharing a database (`bd init --server --database <db>`) push it once per run,
+    under `refs/dolt/<db>`.
 
 ### Push timing log
 

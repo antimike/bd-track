@@ -96,10 +96,14 @@ Shape:
   public GitHub repos (unauthenticated API check, after resolving the real host with
   `git ls-remote --get-url` and `ssh -G`) and unverifiable hosts unless vouched for
   (problem 3).
-- **Server mode** (**built**, `bd-timew-ayn.3`): remotes are read and added through SQL
-  (`dolt sql` for embedded, `bd sql` for servers). A timeout also kills the push inside the
-  server; that path and server credentials (`SSH_AUTH_SOCK` under systemd) still need a test
-  against a live shared server (follow-up bead). The push always passes `--no-adopt`, since `bd dolt push` would otherwise offer
+- **Server mode** (**built**, `bd-timew-ayn.3`; **verified**, `bd-timew-ayn.7`, scratch
+  `dolt sql-server`): remotes are read and added through `bd sql`; a shared database is pushed
+  once per run; killing a timed-out client makes the server cancel the push (no orphaned git or
+  ssh process), and the explicit `KILL QUERY` path works when needed. Credentials come from the
+  server's environment or the ssh config (`IdentityAgent`). The test also found and fixed two
+  bugs: a changed `dolt_remote_url` with the same owner/repo on another host was not re-pointed
+  (now compared by host, port and path), and a failed push logged bd's misleading trailing
+  "Remote ... is not configured" instead of the error line. The push always passes `--no-adopt`, since `bd dolt push` would otherwise offer
   to adopt the git origin as its remote. Spec:
   [registry-schema.md, Dolt push](../registry-schema.md#dolt-push).
 - **Per-host switch** (`bd-timew-ayn.4`): `global.dolt_push` in `~/.config/bd-track/config.yaml`
