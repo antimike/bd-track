@@ -56,7 +56,8 @@ NAME_RE = re.compile(r"[a-z0-9][a-z0-9_-]*")
 
 # beads.* keys bd-track owns; ``prefix`` is shared (see the ownership table in the schema doc).
 BD_TRACK_BEADS_KEYS = (
-    "commit_cadence", "compact_days", "statuses", "dolt_push", "state_repo", "server",
+    "commit_cadence", "compact_days", "statuses", "dolt_push", "dolt_remote_url",
+    "dolt_remote_private", "state_repo", "server",
 )
 SHARED_KEYS = ("remote", "path")
 
@@ -410,6 +411,7 @@ def resolve_clones(registry: Registry, *, scan: bool | None = None) -> None:
 
 
 DEFAULT_STATE_LAYOUT = "{project}/issues.jsonl"
+DEFAULT_PUSH_TIMEOUT = 120
 SWITCH_KEYS = ("dolt_push", "state_export")
 
 
@@ -426,6 +428,8 @@ def load_host_config() -> dict:
     host.setdefault("check_interval", "daily")
     host.setdefault("idle_stop_hours", 4)
     host.setdefault("dolt_push", False)
+    host.setdefault("dolt_remote_url", None)
+    host.setdefault("dolt_push_timeout", DEFAULT_PUSH_TIMEOUT)
     host.setdefault("state_export", False)
     host.setdefault("state_repo", None)
     host.setdefault("state_layout", DEFAULT_STATE_LAYOUT)
@@ -439,6 +443,12 @@ def load_host_config() -> dict:
             raise RegistryError(
                 f"{source}: global.{key} must be always, never, true or false (got {value!r})"
             )
+    timeout = host["dolt_push_timeout"]
+    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)) or timeout <= 0:
+        raise RegistryError(
+            f"{source}: global.dolt_push_timeout must be a positive number of seconds "
+            f"(got {timeout!r})"
+        )
     _check_layout(host["state_layout"], source)
     return host
 
@@ -580,7 +590,7 @@ def set_project(name: str, values: dict, explicit: Path | None = None) -> Path:
 
 HOST_KEYS = (
     "check_interval", "idle_stop_hours", "dolt_push", "defaults", "scan_roots",
-    "state_export", "state_repo", "state_layout",
+    "dolt_remote_url", "dolt_push_timeout", "state_export", "state_repo", "state_layout",
 )
 
 

@@ -212,6 +212,8 @@ def test_host_config_defaults_and_sources(home: Path):
         "check_interval": "daily",
         "idle_stop_hours": 4,
         "dolt_push": False,
+        "dolt_remote_url": None,
+        "dolt_push_timeout": 120,
         "state_export": False,
         "state_repo": None,
         "state_layout": "{project}/issues.jsonl",
@@ -241,6 +243,13 @@ def test_host_dolt_push_accepts(home: Path, value: str, parsed):
 def test_host_state_export_rejects_non_switch_values(home: Path, value: str):
     registry.HOST_CONFIG.write_text(f"global: {{state_export: {value}}}\n")
     with pytest.raises(RegistryError, match="state_export must be"):
+        load_host_config()
+
+
+@pytest.mark.parametrize("value", ["0", "-5", "soon", "true"])
+def test_host_dolt_push_timeout_validated(home: Path, value: str):
+    registry.HOST_CONFIG.write_text(f"global: {{dolt_push_timeout: {value}}}\n")
+    with pytest.raises(RegistryError, match="dolt_push_timeout must be"):
         load_host_config()
 
 
