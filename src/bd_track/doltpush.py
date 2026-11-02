@@ -17,8 +17,9 @@ Design: docs/dev/design-beads-state-repo.md, "Dolt push"; keys: docs/registry-sc
   origin), in its own process group, killed after ``global.dolt_push_timeout`` seconds. In
   server mode the push runs inside the server, so a timeout also kills the server-side query.
 - Every failure is logged and returns; nothing here raises into cleanup. The next run retries.
-- **Timing log**: one TSV line per attempted push in ``~/.local/state/bd-track/dolt-push.tsv``
-  (columns in ``PUSH_LOG_COLUMNS``; how to read it: docs/registry-schema.md, "Push timing log").
+- **Timing log**: one JSON line per attempted push in
+  ``~/.local/state/bd-track/dolt-push.jsonl`` (fields in ``PUSH_LOG_FIELDS``; how to read it:
+  docs/registry-schema.md, "Push timing log").
 
 WSL2 network stacks have stalled Dolt pushes; such hosts should set ``global.dolt_push: never``.
 """
@@ -47,12 +48,16 @@ from bd_track.session import SESSION_STATE_DIR
 
 # Machine-local operational state (the bd-track state directory), kept out of ~/.cache so the
 # benchmark survives a cache clean.
-PUSH_LOG = SESSION_STATE_DIR / "dolt-push.tsv"
-PUSH_LOG_COLUMNS = (
-    "timestamp", "host", "project", "database", "mode", "remote", "db_bytes", "duration_s",
-    "result", "detail",
+PUSH_LOG = SESSION_STATE_DIR / "dolt-push.jsonl"
+PUSH_LOG_VERSION = 1  # bump when a field changes meaning; adding a field does not need it
+PUSH_LOG_FIELDS = (
+    "v", "timestamp", "host", "project", "database", "mode", "remote", "db_bytes", "duration_s",
+    "result", "output",
 )
-DETAIL_MAX = 200
+# Output tail kept per record. Keeps each line far below PIPE_BUF (4096 bytes), the size up to
+# which an O_APPEND write is atomic, so concurrent writers never interleave.
+OUTPUT_LINES = 5
+OUTPUT_MAX = 1000
 
 REMOTE_NAME = "bd-track-backup"
 GITHUB_API = "https://api.github.com/repos/{slug}"
@@ -72,7 +77,8 @@ class PushSkipped(Exception):
 class PushResult:
     ok: bool
     duration: float
-    detail: str
+    detail: str  # one line, for the cleanup log
+    output: str = ""  # tail of the push's output, for the timing log
 
 
 # ---------------------------------------------------------------------------
@@ -334,11 +340,18 @@ def run_push(project_root: Path, timeout: float, argv: tuple[str, ...] = PUSH_AR
             os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
-        proc.communicate()
-        return PushResult(False, time.monotonic() - start, f"timed out after {timeout:g}s")
+        out, _ = proc.communicate()
+        detail = f"timed out after {timeout:g}s"
+        return PushResult(False, time.monotonic() - start, detail, _tail(out) or detail)
     duration = time.monotonic() - start
-    detail = (out or "").strip().splitlines()[-1:] or [""]
-    return PushResult(proc.returncode == 0, duration, detail[0])
+    lines = (out or "").strip().splitlines()
+    return PushResult(proc.returncode == 0, duration, lines[-1] if lines else "", _tail(out))
+
+
+def _tail(out: str | None) -> str:
+    """The last ``OUTPUT_LINES`` lines of ``out``, at most ``OUTPUT_MAX`` characters."""
+    lines = (out or "").strip().splitlines()[-OUTPUT_LINES:]
+    return "\n".join(lines)[-OUTPUT_MAX:]
 
 
 def database_bytes(db: Database) -> int | None:
@@ -355,14 +368,10 @@ def database_bytes(db: Database) -> int | None:
     return total
 
 
-def _tsv_field(value: object) -> str:
-    return "" if value is None else " ".join(str(value).split())
-
-
 def record_push(
     project: Project, db: Database, url: str, result: PushResult, log_path: Path | None = None,
 ) -> None:
-    """Append one line to the timing log; writes the header first when the file is new.
+    """Append one JSON line to the timing log.
 
     One ``write()`` of a short line in append mode, so concurrent cleanups do not interleave.
     A log that cannot be written is reported and otherwise ignored.
@@ -374,24 +383,24 @@ def record_push(
         outcome = "timeout"
     else:
         outcome = "failed"
-    fields = (
-        dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        socket.gethostname(),
-        project.name,
-        db.name,
-        "server" if db.server else "embedded",
-        url,
-        database_bytes(db),
-        f"{result.duration:.2f}",
-        outcome,
-        result.detail[:DETAIL_MAX],
-    )
-    line = "\t".join(_tsv_field(f) for f in fields) + "\n"
+    record = {
+        "v": PUSH_LOG_VERSION,
+        "timestamp": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        "host": socket.gethostname(),
+        "project": project.name,
+        "database": db.name,
+        "mode": "server" if db.server else "embedded",
+        "remote": url,
+        "db_bytes": database_bytes(db),
+        "duration_s": round(result.duration, 2),
+        "result": outcome,
+        "output": result.output[-OUTPUT_MAX:],
+    }
+    line = json.dumps(record, ensure_ascii=False) + "\n"
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        new = not path.exists()
         with path.open("a", encoding="utf-8") as fh:
-            fh.write(("\t".join(PUSH_LOG_COLUMNS) + "\n" + line) if new else line)
+            fh.write(line)
     except OSError as err:
         logging.getLogger("bd-track.cleanup").error("push: cannot write %s: %s", path, err)
 
