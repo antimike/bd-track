@@ -63,6 +63,24 @@ def test_same_repo(a: str, b: str, same: bool):
     assert same_repo(a, b) is same
 
 
+@pytest.mark.parametrize(
+    "stored, configured, same",
+    [
+        ("git+ssh://git@github.com/./o/r.git", "git@github.com:o/r.git", True),
+        ("git+ssh://git@github.com/o/r.git", "ssh://git@github.com:22/o/r", True),
+        ("git+https://github.com/o/r.git", "https://github.com/o/r.git", True),
+        ("git+file:///srv/b.git", "/srv/b.git", True),
+        # same owner/repo, different location: must re-point (bd-timew-ayn.7)
+        ("git+ssh://git@10.255.255.1/./o/r.git", "ssh://git@127.0.0.1:44707/o/r.git", False),
+        ("git+ssh://git@github.com/./o/r.git", "git@gitlab.com:o/r.git", False),
+        ("git+ssh://git@host/o/r.git", "ssh://git@host:2222/o/r.git", False),
+        ("git+file:///srv/a/b.git", "/srv/c/b.git", False),
+    ],
+)
+def test_same_url(stored: str, configured: str, same: bool):
+    assert doltpush.same_url(stored, configured) is same
+
+
 @pytest.fixture
 def ssh_aliases(monkeypatch):
     """``ssh -G`` stand-in: me.github.com and gh are aliases of github.com."""
@@ -336,6 +354,11 @@ def test_push_end_to_end(tmp_path: Path):
     assert not db.server and f"refs/dolt/{db.name}" in refs
     doltpush.ensure_remote(db, str(remote), "refs/dolt/other", log)  # re-point
     assert doltpush.remotes(db)[doltpush.REMOTE_NAME][1] == "refs/dolt/other"
+    # same repo name on another host is a different location: re-point (bd-timew-ayn.7)
+    doltpush.ensure_remote(db, "ssh://git@127.0.0.1:1111/x/backup.git", "refs/dolt/other", log)
+    elsewhere = "ssh://git@127.0.0.1:2222/x/backup.git"
+    doltpush.ensure_remote(db, elsewhere, "refs/dolt/other", log)
+    assert doltpush.same_url(doltpush.remotes(db)[doltpush.REMOTE_NAME][0], elsewhere)
 
 
 def test_push_never_adopts_git_origin():
@@ -377,6 +400,28 @@ def test_timing_log_outcomes_and_types(tmp_path: Path, push_log: Path):
     assert failed["result"] == "failed" and failed["duration_s"] == 1.5
     assert len(failed["output"]) <= doltpush.OUTPUT_MAX
     assert all(len(line.encode()) < 4096 for line in push_log.read_text().splitlines())
+
+
+BD_FAILURE = """Pushing to Dolt remote "bd-track-backup"...
+Error: failed to push to bd-track-backup/main: ... ERROR: Repository not found.
+fatal: Could not read from remote repository.
+hint: dolt does not support interactive credential prompts
+hint: run `ssh-add <key>` to pre-load your key for SSH remotes
+hint: ensure non-interactive auth is configured for GCM
+
+Remote "bd-track-backup" is not configured.
+Use 'bd dolt remote add <name> <url>' to add it.
+"""
+
+
+def test_failed_push_reports_the_error_line(tmp_path: Path):
+    script = f"cat <<'X'\n{BD_FAILURE}X\nexit 1"
+    result = doltpush.run_push(tmp_path, 5, argv=("sh", "-c", script))
+    assert result.detail.startswith("Error: failed to push")
+    assert "Repository not found" in result.detail
+    assert result.output.startswith("Error: failed to push")
+    assert result.output.endswith("Use 'bd dolt remote add <name> <url>' to add it.")
+    assert len(result.output) <= doltpush.OUTPUT_MAX
 
 
 def test_run_push_keeps_output_tail(tmp_path: Path):

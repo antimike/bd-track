@@ -34,6 +34,7 @@ import io
 import json
 import logging
 import os
+import posixpath
 import re
 import signal
 import socket
@@ -158,6 +159,25 @@ def same_repo(a: str, b: str) -> bool:
         return pa == pb
     na, nb = normalize_remote(a.removeprefix("git+")), normalize_remote(b.removeprefix("git+"))
     return na is not None and na == nb
+
+
+def same_url(a: str, b: str) -> bool:
+    """Whether two remote URLs are the same location: host, port and path, not just owner/repo.
+
+    Dolt stores URLs in its own form (``git+ssh://git@host/./o/r.git`` for scp form,
+    ``git+file://`` for paths), so both sides are canonicalised first.
+    """
+    return _canonical(a) == _canonical(b)
+
+
+def _canonical(url: str) -> tuple:
+    local = _local_path(url)
+    if local is not None:
+        return ("file", str(local))
+    parsed = urllib.parse.urlsplit(_as_url(url))
+    path = posixpath.normpath("/" + parsed.path.lstrip("/")).removesuffix(".git").rstrip("/")
+    port = parsed.port or (22 if parsed.scheme == "ssh" else None)
+    return (parsed.scheme, (parsed.hostname or "").lower(), port, path)
 
 
 def _code_remotes(project_root: Path) -> list[str]:
@@ -288,7 +308,7 @@ def ensure_remote(db: Database, url: str, ref: str, log) -> None:
     """Add (or re-point) the ``bd-track-backup`` remote; bd-track owns that name."""
     current = remotes(db).get(REMOTE_NAME)
     if current is not None:
-        if same_repo(current[0], url) and current[1] == ref:
+        if same_url(current[0], url) and current[1] == ref:
             return
         log.info("push: re-pointing remote %s (was %s %s)", REMOTE_NAME, *current)
         db.sql(f"CALL dolt_remote('remove', {sql_literal(REMOTE_NAME)})")
@@ -348,8 +368,8 @@ def run_push(project_root: Path, timeout: float, argv: tuple[str, ...] = PUSH_AR
         detail = f"timed out after {timeout:g}s"
         return PushResult(False, time.monotonic() - start, detail, _tail(out) or detail)
     duration = time.monotonic() - start
-    lines = (out or "").strip().splitlines()
-    return PushResult(proc.returncode == 0, duration, lines[-1] if lines else "", _tail(out))
+    ok = proc.returncode == 0
+    return PushResult(ok, duration, _detail(out, ok), _tail(out))
 
 
 def push_database(project_root: Path, timeout: float) -> PushResult:
@@ -372,10 +392,33 @@ def push_database(project_root: Path, timeout: float) -> PushResult:
     return forced
 
 
+def _error_line(lines: list[str]) -> str | None:
+    """The first ``Error:``/``fatal:`` line: after a failure bd adds hints and a misleading
+    "Remote ... is not configured" message, so the last line is not the cause."""
+    return next(
+        (line.strip() for line in lines if line.strip().lower().startswith(("error", "fatal"))),
+        None,
+    )
+
+
+def _detail(out: str | None, ok: bool) -> str:
+    """One line for the cleanup log: the error line on failure, else the last line."""
+    lines = (out or "").strip().splitlines()
+    if not ok and (error := _error_line(lines)):
+        return error[:300]
+    return lines[-1] if lines else ""
+
+
 def _tail(out: str | None) -> str:
-    """The last ``OUTPUT_LINES`` lines of ``out``, at most ``OUTPUT_MAX`` characters."""
-    lines = (out or "").strip().splitlines()[-OUTPUT_LINES:]
-    return "\n".join(lines)[-OUTPUT_MAX:]
+    """The last ``OUTPUT_LINES`` lines of ``out``, preceded by the first error line when the
+    tail does not contain it; at most ``OUTPUT_MAX`` characters (the error kept first)."""
+    lines = (out or "").strip().splitlines()
+    tail = lines[-OUTPUT_LINES:]
+    error = _error_line(lines)
+    if error and error not in (line.strip() for line in tail):
+        head = error[: OUTPUT_MAX // 2]
+        return head + "\n…\n" + "\n".join(tail)[-(OUTPUT_MAX - len(head) - 3):]
+    return "\n".join(tail)[-OUTPUT_MAX:]
 
 
 def database_bytes(db: Database) -> int | None:
