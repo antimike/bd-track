@@ -27,6 +27,14 @@ needs_dolt = pytest.mark.skipif(
 )
 
 
+@pytest.fixture(autouse=True)
+def push_log(tmp_path: Path, monkeypatch) -> Path:
+    """Keep the timing log out of the real state directory."""
+    path = tmp_path / "state" / "dolt-push.tsv"
+    monkeypatch.setattr(doltpush, "PUSH_LOG", path)
+    return path
+
+
 def _git(path: Path, origin: str | None = None) -> Path:
     path.mkdir(parents=True, exist_ok=True)
     subprocess.run(["git", "init", "-q", str(path)], check=True)
@@ -330,3 +338,54 @@ def test_push_end_to_end(tmp_path: Path):
 def test_push_never_adopts_git_origin():
     assert "--no-adopt" in doltpush.PUSH_ARGV
     assert doltpush.PUSH_ARGV[doltpush.PUSH_ARGV.index("--remote") + 1] == doltpush.REMOTE_NAME
+
+
+# ---------------------------------------------------------------------------
+# timing log
+# ---------------------------------------------------------------------------
+
+
+def _rows(path: Path) -> list[list[str]]:
+    return [line.split("\t") for line in path.read_text().splitlines()]
+
+
+def test_push_writes_timing_log(tmp_path: Path, stubbed, push_log: Path):
+    project = Project("amo", beads={"prefix": "amo"})
+    host = {**HOST, "dolt_remote_url": "/srv/b.git"}
+    doltpush.push_project(project, tmp_path, host, log)
+    doltpush.push_project(project, tmp_path, host, log)
+    rows = _rows(push_log)
+    assert rows[0] == list(doltpush.PUSH_LOG_COLUMNS)  # header once
+    assert len(rows) == 3
+    record = dict(zip(rows[0], rows[1], strict=True))
+    assert (record["project"], record["database"], record["mode"]) == ("amo", "amo", "embedded")
+    assert (record["remote"], record["duration_s"]) == ("/srv/b.git", "0.10")
+    assert record["result"] == "ok"
+
+
+def test_timing_log_outcomes_and_sanitizing(tmp_path: Path, push_log: Path):
+    db = doltpush.Database("beads_global", "server:g", tmp_path)
+    project = Project("p")
+    doltpush.record_push(project, db, "u", PushResult(False, 120.0, "timed out after 120s"))
+    doltpush.record_push(project, db, "u", PushResult(False, 1.5, "bad\tnews\nhere" + "x" * 300))
+    timeout, failed = (
+        dict(zip(doltpush.PUSH_LOG_COLUMNS, r, strict=True)) for r in _rows(push_log)[1:]
+    )
+    assert (timeout["result"], timeout["mode"], timeout["db_bytes"]) == ("timeout", "server", "")
+    assert failed["result"] == "failed"
+    assert failed["detail"].startswith("bad news here") and len(failed["detail"]) <= 200
+    assert all(len(r) == len(doltpush.PUSH_LOG_COLUMNS) for r in _rows(push_log))
+
+
+def test_timing_log_not_written_when_push_skipped(tmp_path: Path, stubbed, push_log: Path):
+    off = Project("p", beads={"prefix": "p"})
+    doltpush.push_project(off, tmp_path, {**HOST, "dolt_push": False}, log)
+    assert not push_log.exists()
+
+
+def test_timing_log_unwritable_is_ignored(tmp_path: Path):
+    blocker = tmp_path / "file"
+    blocker.write_text("")
+    db = doltpush.Database("d", "k", tmp_path)
+    doltpush.record_push(Project("p"), db, "u", PushResult(True, 1, "ok"),
+                         log_path=blocker / "dolt-push.tsv")  # parent is a file: no raise

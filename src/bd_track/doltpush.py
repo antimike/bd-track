@@ -17,6 +17,8 @@ Design: docs/dev/design-beads-state-repo.md, "Dolt push"; keys: docs/registry-sc
   origin), in its own process group, killed after ``global.dolt_push_timeout`` seconds. In
   server mode the push runs inside the server, so a timeout also kills the server-side query.
 - Every failure is logged and returns; nothing here raises into cleanup. The next run retries.
+- **Timing log**: one TSV line per attempted push in ``~/.local/state/bd-track/dolt-push.tsv``
+  (columns in ``PUSH_LOG_COLUMNS``; how to read it: docs/registry-schema.md, "Push timing log").
 
 WSL2 network stacks have stalled Dolt pushes; such hosts should set ``global.dolt_push: never``.
 """
@@ -24,11 +26,14 @@ WSL2 network stacks have stalled Dolt pushes; such hosts should set ``global.dol
 from __future__ import annotations
 
 import csv
+import datetime as dt
 import io
 import json
+import logging
 import os
 import re
 import signal
+import socket
 import subprocess
 import time
 import urllib.error
@@ -38,6 +43,16 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from bd_track.registry import Project, RegistryError, dolt_push_enabled, normalize_remote
+from bd_track.session import SESSION_STATE_DIR
+
+# Machine-local operational state (the bd-track state directory), kept out of ~/.cache so the
+# benchmark survives a cache clean.
+PUSH_LOG = SESSION_STATE_DIR / "dolt-push.tsv"
+PUSH_LOG_COLUMNS = (
+    "timestamp", "host", "project", "database", "mode", "remote", "db_bytes", "duration_s",
+    "result", "detail",
+)
+DETAIL_MAX = 200
 
 REMOTE_NAME = "bd-track-backup"
 GITHUB_API = "https://api.github.com/repos/{slug}"
@@ -326,6 +341,61 @@ def run_push(project_root: Path, timeout: float, argv: tuple[str, ...] = PUSH_AR
     return PushResult(proc.returncode == 0, duration, detail[0])
 
 
+def database_bytes(db: Database) -> int | None:
+    """On-disk size of an embedded database (a proxy for push size); None in server mode."""
+    if db.directory is None:
+        return None
+    total = 0
+    for path in (db.directory / ".dolt").rglob("*"):
+        try:
+            if path.is_file() and not path.is_symlink():
+                total += path.stat().st_size
+        except OSError:
+            continue
+    return total
+
+
+def _tsv_field(value: object) -> str:
+    return "" if value is None else " ".join(str(value).split())
+
+
+def record_push(
+    project: Project, db: Database, url: str, result: PushResult, log_path: Path | None = None,
+) -> None:
+    """Append one line to the timing log; writes the header first when the file is new.
+
+    One ``write()`` of a short line in append mode, so concurrent cleanups do not interleave.
+    A log that cannot be written is reported and otherwise ignored.
+    """
+    path = log_path or PUSH_LOG
+    if result.ok:
+        outcome = "ok"
+    elif result.detail.startswith("timed out"):
+        outcome = "timeout"
+    else:
+        outcome = "failed"
+    fields = (
+        dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+        socket.gethostname(),
+        project.name,
+        db.name,
+        "server" if db.server else "embedded",
+        url,
+        database_bytes(db),
+        f"{result.duration:.2f}",
+        outcome,
+        result.detail[:DETAIL_MAX],
+    )
+    line = "\t".join(_tsv_field(f) for f in fields) + "\n"
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        new = not path.exists()
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(("\t".join(PUSH_LOG_COLUMNS) + "\n" + line) if new else line)
+    except OSError as err:
+        logging.getLogger("bd-track.cleanup").error("push: cannot write %s: %s", path, err)
+
+
 def push_project(
     project: Project,
     project_root: Path,
@@ -367,6 +437,7 @@ def push_project(
     if pushed is not None:
         pushed.add(db.key)
     result = run_push(project_root, host["dolt_push_timeout"])
+    record_push(project, db, url, result)
     if result.ok:
         log.info("push: ok in %.1fs (%s)", result.duration, result.detail)
     else:
