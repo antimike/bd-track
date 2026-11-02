@@ -150,35 +150,40 @@ Design: [dev/design-beads-state-repo.md](dev/design-beads-state-repo.md#dolt-pus
 ### Push timing log
 
 Every attempted push (not one skipped by the switch, the guard or a configuration error) appends
-one line to `~/.local/state/bd-track/dolt-push.tsv`, a tab-separated file with a header row. It
-exists to judge whether automated pushes are reliable on a host (for example, two weeks of data
-before deciding whether pushes are safe outside a session). bd-track never trims it; delete it
-to start over.
+one JSON object per line to `~/.local/state/bd-track/dolt-push.jsonl`. It exists to judge whether
+automated pushes are reliable on a host (for example, two weeks of data before deciding whether
+pushes are safe outside a session). bd-track never trims it; delete it to start over.
 
-| Column | Meaning |
+| Field | Meaning |
 |---|---|
+| `v` | Record version, `1`. Bumped only when a field changes meaning; new fields may appear without it, so readers should select fields by name |
 | `timestamp` | UTC, ISO 8601, when the push finished |
 | `host` | Machine hostname (useful if logs from several hosts are compared) |
 | `project` | Registry name of the project whose cleanup ran the push |
 | `database` | Dolt database pushed (the ref is `refs/dolt/<database>`) |
-| `mode` | `embedded` or `server` |
+| `mode` | `"embedded"` or `"server"` |
 | `remote` | The configured `dolt_remote_url` |
-| `db_bytes` | On-disk size of the embedded database (a proxy: the push sends only new chunks); empty in server mode |
-| `duration_s` | Wall-clock seconds, including a timed-out push's full wait |
-| `result` | `ok`, `failed`, or `timeout` (killed after `dolt_push_timeout`) |
-| `detail` | Last line of `bd dolt push` output, whitespace collapsed, at most 200 characters |
+| `db_bytes` | On-disk size of the embedded database in bytes (a proxy: the push sends only new chunks); `null` in server mode |
+| `duration_s` | Wall-clock seconds (number), including a timed-out push's full wait |
+| `result` | `"ok"`, `"failed"`, or `"timeout"` (killed after `dolt_push_timeout`) |
+| `output` | Last 5 lines of `bd dolt push` output, verbatim, at most 1000 characters |
 
-Reading it:
+Each line is written with one append-mode `write()` and stays far below 4096 bytes, so
+concurrent cleanups never interleave records. Reading it:
 
 ```sh
-column -t -s $'\t' ~/.local/state/bd-track/dolt-push.tsv | less -S
-# count of each result, and the slowest pushes
-awk -F'\t' 'NR>1 {n[$9]++} END {for (r in n) print r, n[r]}' ~/.local/state/bd-track/dolt-push.tsv
-sort -t$'\t' -k8,8gr ~/.local/state/bd-track/dolt-push.tsv | head
+LOG=~/.local/state/bd-track/dolt-push.jsonl
+# as a table
+jq -r '[.timestamp, .project, .duration_s, .result] | @tsv' "$LOG" | column -t
+# count of each result
+jq -r .result "$LOG" | sort | uniq -c
+# the five slowest pushes, and every timeout with its output
+jq -s 'sort_by(-.duration_s) | .[:5][] | {timestamp, project, duration_s, result}' "$LOG"
+jq 'select(.result == "timeout")' "$LOG"
 ```
 
-Any `timeout` row is a stall that the timeout contained; repeated ones point at the network path
-(on WSL2, typically MTU or offload problems). Errors writing the log are reported in
+Any `timeout` record is a stall that the timeout contained; repeated ones point at the network
+path (on WSL2, typically MTU or offload problems). Errors writing the log are reported in
 `~/.cache/bd-track/cleanup.log` and never stop cleanup.
 
 ### State export

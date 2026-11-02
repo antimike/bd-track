@@ -106,9 +106,9 @@ Shape:
   takes `always` / `never` (forced) or `true` / `false` (default, overridden per project by
   `beads.dolt_push` in the registry). Default `false`. Semantics:
   [registry-schema.md, `dolt_push`](../registry-schema.md#dolt_push).
-- **Timing log** (**built**, `bd-timew-ayn.5`): one TSV line per attempted push in
-  `~/.local/state/bd-track/dolt-push.tsv` (timestamp, host, project, database, mode, remote,
-  database size as a proxy for bytes, duration, result, detail), so about two weeks of zbook
+- **Timing log** (**built**, `bd-timew-ayn.5`): one JSON line per attempted push in
+  `~/.local/state/bd-track/dolt-push.jsonl` (timestamp, host, project, database, mode, remote,
+  database size as a proxy for bytes, duration, result, output tail), so about two weeks of zbook
   data can decide whether the global rule relaxes for non-WSL hosts. Until then the session rule
   stands. Columns and how to read it:
   [registry-schema.md, Push timing log](../registry-schema.md#push-timing-log).
