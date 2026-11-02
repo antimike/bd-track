@@ -55,7 +55,7 @@ projects:
 | `beads.commit_cadence` | bd-track | Minimum interval between `cleanup` passes (commit, compact, gc) for this project (`1d`, `12h`). Default `1d`. |
 | `beads.compact_days` | bd-track | `bd compact --days` value for `cleanup`. Default `7`. |
 | `beads.statuses` | bd-track | Custom bd statuses `init-project` enables (names only, no `:category`). |
-| `beads.dolt_push` | bd-track | `true` / `false`: per-project Dolt push choice, subject to the host setting ([dolt_push](#dolt_push)). Absent: the host default applies. |
+| `beads.dolt_push` | bd-track | `true` / `false`: per-project Dolt push choice, subject to the host setting ([dolt_push](#dolt_push)). Absent: the host default applies. Any other value (including `no`/`off`, which YAML 1.2 reads as strings) is an error, and the project is not pushed. |
 | `beads.dolt_remote_url` | bd-track | Git repo this project's Dolt database is pushed to, instead of `global.dolt_remote_url` ([Dolt push](#dolt-push)). |
 | `beads.dolt_remote_private` | bd-track | `true` vouches that `dolt_remote_url` is private when bd-track cannot check it (a host other than GitHub). |
 | `beads.state_repo` | bd-track | `true` / `false`, or a path: per-project state export choice, subject to the host setting ([state export](#state-export)). A path turns export on and names the state repo for this project instead of `global.state_repo`. Absent: the host default applies. |
@@ -111,7 +111,9 @@ The global value either sets a default or forces a value; YAML types keep the tw
 | `true` | Default on; a project with `beads.dolt_push: false` does not push. |
 
 Any other value is an error. `on`, `off`, `yes` and `no` are rejected rather than read as YAML 1.1
-booleans. Hosts with unreliable network stacks (WSL2) should use `never`.
+booleans; so is any non-boolean `beads.dolt_push`. Hosts with unreliable network stacks (WSL2)
+should use `never`. A dotfiles manager can render the value per host (for example `never` on
+WSL hosts).
 
 ### Dolt push
 
