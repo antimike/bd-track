@@ -619,27 +619,33 @@ def _install_systemd_units(check_interval: str, idle_stop_hours: int) -> None:
 # cleanup
 # ---------------------------------------------------------------------------
 
-def _resolve_export(project, project_root: Path, log) -> tuple[Path, Path] | None:
-    """The state export target for this cleanup, or ``None`` (off, unregistered, or broken)."""
-    from bd_track.registry import (
-        RegistryError,
-        load_host_config,
-        load_registry,
-        state_export_target,
-    )
+def _registry_context(project, project_root: Path, log) -> tuple[object, dict] | None:
+    """``(registry entry, host settings)`` for the export and push phases, or ``None``."""
+    from bd_track.registry import RegistryError, load_host_config, load_registry
 
     try:
         if project is None:
             project = load_registry().for_directory(project_root)
             if project is None:
-                log.info("Phase 4/4: export (skipped — project not in the registry)")
+                log.info("Phases 4-5: export, push (skipped — project not in the registry)")
                 return None
-        target = state_export_target(project, load_host_config())
+        return project, load_host_config()
     except RegistryError as err:
-        log.error("Phase 4/4: export (skipped — %s)", err)
+        log.error("Phases 4-5: export, push (skipped — %s)", err)
+        return None
+
+
+def _resolve_export(project, host: dict, log) -> tuple[Path, Path] | None:
+    """The state export target for this cleanup, or ``None`` (off, or misconfigured)."""
+    from bd_track.registry import RegistryError, state_export_target
+
+    try:
+        target = state_export_target(project, host)
+    except RegistryError as err:
+        log.error("Phase 4/5: export (skipped — %s)", err)
         return None
     if target is None:
-        log.info("Phase 4/4: export (off for this project)")
+        log.info("Phase 4/5: export (off for this project)")
     return target
 
 
@@ -652,7 +658,7 @@ def _export_issues(target: tuple[Path, Path], project_root: Path, log) -> None:
     created.
     """
     repo, dest = target
-    log.info("Phase 4/4: export to %s", dest)
+    log.info("Phase 4/5: export to %s", dest)
     if not repo.is_dir():
         log.error("export: state repo %s does not exist; skipping", repo)
         return
@@ -680,7 +686,7 @@ def cmd_cleanup(
     """Run Beads/Dolt maintenance for the active project (or --project-dir).
 
     ``project`` is its registry entry when the caller has it (the cleanup service); otherwise
-    it is looked up by directory for the state export step.
+    it is looked up by directory for the state export and Dolt push steps.
     """
     beads_dir = find_beads_dir(project_dir)
     project_root = beads_dir.parent.resolve()
@@ -691,7 +697,7 @@ def cmd_cleanup(
     log.info("Starting cleanup (days=%d, commit=%s)", days, commit)
 
     if commit:
-        log.info("Phase 1/4: dolt commit")
+        log.info("Phase 1/5: dolt commit")
         result = run(
             ["bd", "dolt", "commit"], check=False, capture=True, cwd=project_root
         )
@@ -700,9 +706,9 @@ def cmd_cleanup(
         else:
             log.info("dolt commit: %s", result.stdout.strip())
     else:
-        log.info("Phase 1/4: dolt commit (skipped — pass --commit to include)")
+        log.info("Phase 1/5: dolt commit (skipped — pass --commit to include)")
 
-    log.info("Phase 2/4: compact --days %d", days)
+    log.info("Phase 2/5: compact --days %d", days)
     result = run(
         ["bd", "compact", f"--days={days}", "--force"],
         check=False, capture=True, cwd=project_root,
@@ -712,7 +718,7 @@ def cmd_cleanup(
     else:
         log.info("compact: %s", result.stdout.strip())
 
-    log.info("Phase 3/4: gc")
+    log.info("Phase 3/5: gc")
     result = run(
         ["bd", "gc", "--skip-decay", "--force"],
         check=False, capture=True, cwd=project_root,
@@ -722,9 +728,15 @@ def cmd_cleanup(
     else:
         log.info("gc: %s", result.stdout.strip())
 
-    target = _resolve_export(project, project_root, log)
-    if target is not None:
-        _export_issues(target, project_root, log)
+    context = _registry_context(project, project_root, log)
+    if context is not None:
+        from bd_track.doltpush import push_project
+
+        project, host = context
+        target = _resolve_export(project, host, log)
+        if target is not None:
+            _export_issues(target, project_root, log)
+        push_project(project, project_root, host, log)
 
     log.info("Cleanup complete")
 

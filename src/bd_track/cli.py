@@ -606,7 +606,12 @@ def get_cli_arguments() -> argparse.Namespace:
         description=(
             "Commit (with --commit), compact and GC the project's Beads database, then export "
             "its issues to a state repo when global.state_export / beads.state_repo turn that "
-            "on (see docs/registry-schema.md). bd-track never commits or pushes the state repo."
+            "on (bd-track never commits or pushes the state repo), then push the Dolt database "
+            "to a private git repo under refs/dolt/<prefix> when global.dolt_push / "
+            "beads.dolt_push turn that on. The push has a hard timeout "
+            "(global.dolt_push_timeout, default 120 s) and refuses public repos and the "
+            "project's own code remotes. Dolt pushes have stalled on WSL2 network stacks: set "
+            "global.dolt_push: never on such hosts. Keys: docs/registry-schema.md."
         ),
         formatter_class=HelpFormatter,
     )

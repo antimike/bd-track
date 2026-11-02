@@ -210,6 +210,7 @@ def _cleanup(tmp_path: Path, beads: dict, host: dict, monkeypatch):
     root = tmp_path / "amo"
     (root / ".beads").mkdir(parents=True)
     monkeypatch.setattr(registry, "load_host_config", lambda: {
+        "dolt_push": False, "dolt_remote_url": None, "dolt_push_timeout": 120,
         "state_export": False, "state_repo": None,
         "state_layout": "{project}/issues.jsonl", **host,
     })
@@ -258,3 +259,19 @@ def test_cleanup_export_config_error_does_not_raise(tmp_path: Path, stub_bd, mon
     calls, _ = stub_bd
     _cleanup(tmp_path, {"prefix": "amo", "state_repo": True}, {}, monkeypatch)  # no repo
     assert ["bd", "gc"] in [c[:2] for c in calls]
+
+
+def test_cleanup_pushes_after_export(tmp_path: Path, stub_bd, monkeypatch):
+    from bd_track import doltpush
+
+    calls, _ = stub_bd
+    pushed = []
+    monkeypatch.setattr(
+        doltpush, "push_project",
+        lambda project, root, host, log: pushed.append((project.name, len(calls))),
+    )
+    state = tmp_path / "state"
+    state.mkdir()
+    _cleanup(tmp_path, {"prefix": "amo", "state_repo": True}, {"state_repo": str(state)},
+             monkeypatch)
+    assert pushed == [("amo", 3)]  # after compact, gc and export
