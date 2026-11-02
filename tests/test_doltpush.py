@@ -204,6 +204,12 @@ def test_push_project_off_or_unconfigured(tmp_path: Path, stubbed):
     assert stubbed == []
 
 
+def test_push_project_rejects_string_override(tmp_path: Path, stubbed):
+    project = Project("p", beads={"prefix": "p", "dolt_push": "no"})
+    assert doltpush.push_project(project, tmp_path, {**HOST, "dolt_remote_url": "/b"}, log) is None
+    assert stubbed == []
+
+
 def test_push_project_flow(tmp_path: Path, stubbed):
     project = Project("amo", beads={"prefix": "amo", "dolt_remote_url": "/srv/b.git"})
     host = {**HOST, "dolt_remote_url": "/srv/default.git", "dolt_push_timeout": 30}

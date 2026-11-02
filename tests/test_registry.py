@@ -284,6 +284,43 @@ def test_switch_enabled(host, project, expected):
     assert registry.switch_enabled(host, project) is expected
 
 
+@pytest.mark.parametrize(
+    "host, project, expected",
+    [
+        ("never", True, False),
+        ("always", False, True),
+        (False, None, False),
+        (True, None, True),
+        (False, True, True),
+        (True, False, False),
+    ],
+)
+def test_dolt_push_enabled(host, project, expected):
+    from bd_track.registry import Project, dolt_push_enabled
+
+    beads = {"prefix": "p"} if project is None else {"prefix": "p", "dolt_push": project}
+    assert dolt_push_enabled(Project("p", beads=beads), {"dolt_push": host}) is expected
+
+
+@pytest.mark.parametrize("key", ["dolt_push", "dolt_remote_private"])
+@pytest.mark.parametrize("value", ["no", "off", "always", 1])
+def test_dolt_push_project_values_must_be_bool(key: str, value):
+    from bd_track.registry import Project, dolt_push_enabled
+
+    with pytest.raises(RegistryError, match=f"beads.{key} must be true or false"):
+        dolt_push_enabled(Project("p", beads={key: value}), {"dolt_push": False})
+
+
+def test_dolt_push_yaml12_no_is_rejected_end_to_end(home: Path):
+    registry.DEFAULT_REGISTRY.write_text(
+        "projects:\n  p:\n    path: /tmp/p\n    beads: { prefix: p, dolt_push: no }\n"
+    )
+    project = registry.load_registry().get("p")
+    assert project.beads["dolt_push"] == "no"  # YAML 1.2: a string, not false
+    with pytest.raises(RegistryError, match="must be true or false"):
+        registry.dolt_push_enabled(project, {"dolt_push": True})
+
+
 def _host(**over) -> dict:
     return {"state_export": False, "state_repo": None,
             "state_layout": "{project}/issues.jsonl", **over}

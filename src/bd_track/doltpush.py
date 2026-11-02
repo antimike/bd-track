@@ -37,7 +37,7 @@ import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
 
-from bd_track.registry import Project, normalize_remote, switch_enabled
+from bd_track.registry import Project, RegistryError, dolt_push_enabled, normalize_remote
 
 REMOTE_NAME = "bd-track-backup"
 GITHUB_API = "https://api.github.com/repos/{slug}"
@@ -340,7 +340,12 @@ def push_project(
     stalled one is not retried by each of its projects.
     """
     phase = "Phase 5/5: dolt push"
-    if not switch_enabled(host["dolt_push"], project.beads.get("dolt_push")):
+    try:
+        enabled = dolt_push_enabled(project, host)
+    except RegistryError as err:
+        log.error("%s (skipped — %s)", phase, err)
+        return None
+    if not enabled:
         log.info("%s (off for this project)", phase)
         return None
     url = project.beads.get("dolt_remote_url") or host.get("dolt_remote_url")

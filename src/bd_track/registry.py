@@ -487,6 +487,22 @@ def switch_enabled(host_value: bool | str, project_value: object) -> bool:
     return True
 
 
+def dolt_push_enabled(project: Project, host: dict) -> bool:
+    """Whether cleanup pushes ``project``'s database (schema doc, ``dolt_push``).
+
+    ``beads.dolt_push`` must be a boolean when set: YAML 1.2 reads ``no`` or ``off`` as
+    strings, which must not count as on. ``beads.dolt_remote_private`` likewise. Raises
+    ``RegistryError`` otherwise.
+    """
+    for key in ("dolt_push", "dolt_remote_private"):
+        value = project.beads.get(key)
+        if value is not None and not isinstance(value, bool):
+            raise RegistryError(
+                f"project {project.name}: beads.{key} must be true or false (got {value!r})"
+            )
+    return switch_enabled(host["dolt_push"], project.beads.get("dolt_push"))
+
+
 def state_export_target(project: Project, host: dict) -> tuple[Path, Path] | None:
     """``(state repo, export file)`` for ``project``'s ``cleanup`` export, or ``None`` if off.
 
