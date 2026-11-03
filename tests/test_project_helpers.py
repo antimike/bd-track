@@ -125,6 +125,33 @@ def test_register_without_remote_writes_home_relative_path(reg_home: Path, monke
     assert "path: ~/src/local" in registry.DEFAULT_REGISTRY.read_text()
 
 
+def test_init_project_bad_host_config_exits_before_side_effects(reg_home: Path, monkeypatch):
+    """A host config failing validation is a clean exit, not a traceback after writes."""
+    from bd_track import project, registry
+
+    registry.HOST_CONFIG.write_text('global:\n  host_name: "a/b"\n')
+    proj = reg_home / "proj"
+    (proj / ".beads").mkdir(parents=True)
+    monkeypatch.setattr(project, "run", lambda *a, **k: pytest.fail("ran a command"))
+    with pytest.raises(SystemExit, match=r"^bd-track: .*global\.host_name"):
+        project.cmd_init_project(
+            path=proj,
+            days=7,
+            commit_cadence="1d",
+            statuses_arg="",
+            hooks_arg=False,
+            no_git_ops=False,
+            install_systemd=False,
+            check_interval="daily",
+            idle_stop_hours=0,
+            server_mode=False,
+            dolt_user=None,
+            pass_path=None,
+            yes=True,
+        )
+    assert list((proj / ".beads").iterdir()) == []  # no config.yaml, no sidecar
+
+
 # ---------------------------------------------------------------------------
 # _ensure_auto_push_disabled (PROJ-i85 / pitfalls-beads-dolt-remote)
 # ---------------------------------------------------------------------------

@@ -391,6 +391,15 @@ def cmd_init_project(
     agents_profile: str = "full",
     name: str | None = None,
 ) -> None:
+    from bd_track.registry import RegistryError, load_host_config
+
+    # Read host settings before any side effect, so a config that fails validation stops
+    # init-project cleanly instead of after bd init and the config/sidecar writes (bd-timew-hpw).
+    try:
+        host = load_host_config()
+    except RegistryError as err:
+        sys.exit(f"bd-track: {err}")
+
     # Bootstrap path (PROJ-xji): if .beads/ doesn't exist, run `bd init`
     # ourselves. Forwards --server (when known), --sandbox (default true,
     # safest setting from empirical testing), --prefix, and the chosen
@@ -423,10 +432,7 @@ def cmd_init_project(
     else:
         root_log.debug("Sidecar already exists at %s, skipping scaffold.", sidecar)
 
-    from bd_track.registry import load_host_config
-
     registry_name, existing_entry = _registry_target(project_root, name)
-    host = load_host_config()
     if existing_entry is not None:
         root_log.info("Project already registered as %r: %s", registry_name, project_path)
         if not confirm(
