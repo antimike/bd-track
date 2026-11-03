@@ -33,7 +33,7 @@ bd-track resolves the registry file in this order:
 ```yaml
 projects:
   amontillado:                        # project name: --project <name>, and other tools' key
-    remote: antimike/amontillado      # owner/repo of the clone's origin
+    remote: antimike/amontillado      # owner/repo shorthand, or any git URL
     path: ~/.local/src/amontillado    # optional
     beads:
       prefix: amo
@@ -49,7 +49,7 @@ projects:
 | Key | Owner | Meaning |
 |---|---|---|
 | `projects.<name>` | shared | Project name: lowercase, `[a-z0-9][a-z0-9_-]*`. Other tools may key on it too (for example a ticket inbox directory). |
-| `remote` | shared | `owner/repo` of the clone's `origin`. Matched against any host or URL form (`git@github.com:o/r.git`, `https://…/o/r`). Preferred over `path`. |
+| `remote` | shared | The clone's `origin`: any URL git accepts (`git@host:o/r.git`, `https://host/o/r.git`, `ssh://…`, a local path), or the `owner/repo` shorthand. Matched by the URL's path, not its host ([Remotes](#remotes)). Preferred over `path`. |
 | `path` | shared | `~`-relative path. Needed for a repo without a remote, or to pin one of several clones of a remote (only that clone gets the name). |
 | `beads.prefix` | shared | The project's bd issue prefix. Its presence means the project uses beads. |
 | `beads.commit_cadence` | bd-track | Minimum interval between `cleanup` passes (commit, compact, gc) for this project (`1d`, `12h`). Default `1d`. |
@@ -81,6 +81,7 @@ global:
   state_export: false         # always | never | true | false
   state_repo: ~/state         # path of the state repo's working tree (none: no default repo)
   state_layout: "{project}/issues.jsonl"   # export file inside the state repo
+  default_url_prefix: ~       # clone URL prefix for owner/repo remotes, e.g. 'git@github.com:'
   scan_roots: []              # where to look for clones of remote-only projects (none: no scan)
   defaults:
     statuses: []
@@ -244,6 +245,26 @@ private git repo that another tool commits and pushes; bd-track never runs git i
 - The default (`false`) exports nothing: with client or employer data in some projects, a
   project should reach a personal repo only by choice.
 
+## Remotes
+
+`remote` is a string in one of two forms (`bd-timew-q9o.6`):
+
+- **A git URL or path**, in any form git accepts. bd-track clones from it as written (`bd-track
+  restore`), so it also picks the protocol: write `https://…` for https, `git@…` for ssh. To
+  rewrite URLs for every project on a host, use git's `url.<base>.insteadOf`.
+- **The `owner/repo` shorthand** (exactly two components, no scheme, no `:`). Its clone URL is
+  the host's `global.default_url_prefix` followed by `owner/repo`; for example, with the prefix
+  `git@me.github.com:` (an ssh host alias), `antimike/notes` clones from
+  `git@me.github.com:antimike/notes`. With no prefix set the shorthand still matches clones, but
+  bd-track has no URL to clone it from. The prefix must end in `:` or `/`.
+
+**Matching.** A project matches a clone when their paths agree: the URL's path, lowercased,
+without `.git` and edge slashes. The host is ignored, so ssh host aliases match the canonical
+host (`git@me.github.com:o/r` and `https://github.com/o/r` are both `o/r`). Nested paths keep
+every component: `group/sub/repo` does not match a shorthand `sub/repo`. Two hosts serving the
+same path match the same project; pin one clone with `path:` if that happens. A `remote` that is
+neither form is ignored with a warning.
+
 ## Resolving a project
 
 - **By name** (`--project <name>`): the key under `projects:`.
@@ -323,3 +344,4 @@ implement.
 | 2026-11-02 | The state export includes `bd remember` memories (`--include-memories`), with no setting: a backup that drops them loses data that exists only in `.beads/` (`bd-timew-ayn.2`, MH). |
 | 2026-11-02 | Dolt push refs are `refs/dolt/<host>/<database>`, host = `global.host_name` (default the short hostname): a project on two hosts pushed both to one ref, and the forced retry let the last host replace the other's copy. Ref per host, not branch per host: a Dolt remote keeps all branches in one store under one git ref, and `reset-data` rebuilds it from local HEAD, wiping other hosts' branches (`bd-timew-q9o.2`, MH). |
 | 2026-11-02 | The state export copies session event logs to `sessions/` beside the issues file (`sessions/<project>/` for a flat layout), new or grown files only, with no setting: they are billing data outside every other backup (`bd-timew-q9o.1`). |
+| 2026-11-03 | `remote` accepts any git URL or the `owner/repo` shorthand, still a string (no `remote.github`/`remote.ssh` subdict: the URL carries the protocol, `insteadOf` covers host-wide rewrites); `global.default_url_prefix` (per host, no default) makes a shorthand cloneable; matching uses the URL path without the host, so ssh aliases match and nested paths stay distinct (`bd-timew-q9o.6`, MH). |
