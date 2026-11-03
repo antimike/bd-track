@@ -15,6 +15,7 @@ import pytest
 
 from bd_track.project import (
     _INTERVAL_ALIASES,
+    _bd_config_settings,
     _ensure_auto_push_disabled,
     _registry_target,
     parse_cadence,
@@ -176,6 +177,26 @@ def test_ensure_auto_push_disabled_handles_missing_trailing_newline(tmp_path):
     _ensure_auto_push_disabled(beads)
     out = cfg.read_text()
     assert "sync:\n  remote: foo\ndolt.auto-push: false\n" == out
+
+
+# ---------------------------------------------------------------------------
+# _bd_config_settings (init-project's bd config set pairs, bd-timew-4fv)
+# ---------------------------------------------------------------------------
+
+
+def test_bd_config_settings_defaults():
+    assert _bd_config_settings(no_git_ops=False, statuses=[]) == [
+        ("dolt.auto-commit", "batch"),
+        ("backup.git-push", "false"),
+    ]
+
+
+def test_bd_config_settings_optional_keys():
+    settings = dict(_bd_config_settings(no_git_ops=True, statuses=["review", "operator"]))
+    assert settings["backup.git-push"] == "false"
+    assert settings["no-git-ops"] == "true"
+    assert settings["status.custom"] == "review,operator"
+    assert "no-push" not in settings  # would gate the explicit `bd dolt push`
 
 
 # ---------------------------------------------------------------------------

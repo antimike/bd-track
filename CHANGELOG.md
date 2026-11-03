@@ -26,6 +26,9 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   bead id (`prefix-hash`, optional `.N` children, no whitespace), or the command exits
   non-zero naming the bad argument and leaves the queue unchanged. Several ids passed as one
   quoted argument (zsh does not word-split `"$T"`) used to be stored as a single entry.
+- **`init-project` sets `backup.git-push: false`** (`bd-timew-4fv`): bd's auto-backup
+  stays local instead of pushing to the project's git remote. bd 1.3 already defaults it
+  off; the explicit key covers older bd and shows the choice in `.beads/config.yaml`.
 
 ## [0.7.0] - 2026-10-30
 

@@ -348,6 +348,29 @@ def _provision_dolt_user(
 # ---------------------------------------------------------------------------
 
 
+def _bd_config_settings(*, no_git_ops: bool, statuses: list[str]) -> list[tuple[str, str]]:
+    """The ``bd config set`` pairs init-project applies, in order.
+
+    `dolt.auto-push: false` is set via direct file write earlier (see
+    _ensure_auto_push_disabled) to break the chicken-and-egg hang; do not
+    duplicate it here. Setting `no-push: true` would gate `bd dolt push`
+    (the explicit subcommand), which we don't need to suppress.
+
+    `backup.git-push: false` keeps bd's auto-backup from pushing to the
+    project's git remote. bd 1.3 already defaults it off; setting it pins that
+    for older bd and makes the choice visible in config.yaml (bd-timew-4fv).
+    """
+    settings: list[tuple[str, str]] = [
+        ("dolt.auto-commit", "batch"),
+        ("backup.git-push", "false"),
+    ]
+    if no_git_ops:
+        settings.append(("no-git-ops", "true"))
+    if statuses:
+        settings.append(("status.custom", ",".join(statuses)))
+    return settings
+
+
 def cmd_init_project(
     path: Path | None,
     days: int | None,
@@ -464,19 +487,7 @@ def cmd_init_project(
             prompt("Idle server stop threshold (hours, 0 to disable)", "4", yes=yes)
         )
 
-    # `dolt.auto-push: false` is set via direct file write earlier (see
-    # _ensure_auto_push_disabled) to break the chicken-and-egg hang; do not
-    # duplicate it here. Setting `no-push: true` would gate `bd dolt push`
-    # (the explicit subcommand), which we don't need to suppress.
-    settings: list[tuple[str, str]] = [
-        ("dolt.auto-commit", "batch"),
-    ]
-    if no_git_ops:
-        settings.append(("no-git-ops", "true"))
-    if effective_statuses:
-        settings.append(("status.custom", ",".join(effective_statuses)))
-
-    for key, value in settings:
+    for key, value in _bd_config_settings(no_git_ops=no_git_ops, statuses=effective_statuses):
         result = run(
             ["bd", "config", "set", key, value],
             check=False,
