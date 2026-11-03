@@ -21,6 +21,10 @@ install-dev: check-deps
     -pipx uninstall bd-track
     pipx install --editable .
 
+# Run the test suite (extra args pass through to pytest).
+test *args:
+    uv run pytest -q {{args}}
+
 # Remove the pipx install.
 uninstall:
     pipx uninstall bd-track
