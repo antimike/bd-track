@@ -855,7 +855,7 @@ def _dispatch_queue(args: argparse.Namespace) -> None:
         return
 
 
-def _resolve_project_scope(args: argparse.Namespace) -> "Path | None":
+def _resolve_project_scope(args: argparse.Namespace) -> Path | None:
     """Return the project_dir implied by ``--project``, or ``None``."""
     if args.project_scope:
         from bd_track.util import resolve_project_dir

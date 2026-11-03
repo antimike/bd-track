@@ -217,7 +217,7 @@ def cmd_switch(issue_id: str, *, from_issue_id: str | None = None,
 # show
 # ---------------------------------------------------------------------------
 
-def _find_interval(interval_id: str, roots: list[Path]) -> "tuple[str, Interval]":
+def _find_interval(interval_id: str, roots: list[Path]) -> tuple[str, Interval]:
     """Locate an interval by full ULID or unique prefix across project roots."""
     prefix = interval_id.upper()
     matches: dict[str, Interval] = {}
@@ -234,7 +234,7 @@ def _find_interval(interval_id: str, roots: list[Path]) -> "tuple[str, Interval]
     return next(iter(matches.items()))
 
 
-def _interval_to_dict(iv: "Interval") -> dict:
+def _interval_to_dict(iv: Interval) -> dict:
     return {
         "interval": iv.interval,
         "status": iv.status,
@@ -276,7 +276,8 @@ def cmd_show(
         return
 
     if fmt in ("csv", "tsv"):
-        import csv, io
+        import csv
+        import io
         sep = "\t" if fmt == "tsv" else ","
         buf = io.StringIO()
         w = csv.writer(buf, delimiter=sep)
@@ -604,7 +605,8 @@ def cmd_list(
         return
 
     if fmt in ("csv", "tsv"):
-        import csv, io
+        import csv
+        import io
         sep = "\t" if fmt == "tsv" else ","
         buf = io.StringIO()
         w = csv.writer(buf, delimiter=sep)
