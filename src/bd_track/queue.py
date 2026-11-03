@@ -18,6 +18,7 @@ notes) are documented in DESIGN_NOTES.md but not yet implemented.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -37,6 +38,24 @@ from bd_track.util import (
 # Statuses that indicate a queue entry is no longer actionable. Removed by
 # `clean` (mechanical) and surfaced by `prune` (analytical).
 STALE_STATUSES = {"closed", "deferred"}
+
+# Bead-ID shape accepted by push/unshift: a prefix and hash joined by hyphens
+# (the prefix may itself contain hyphens), then optional ``.N`` child suffixes.
+# Matches ``bd-timew-as5``, ``amo-aqp.23``, ``PROJ-18077``. Shape only; no
+# ``bd show`` existence check (one bd call per id is too slow for push).
+BEAD_ID_RE = re.compile(r"[A-Za-z0-9_]+(?:-[A-Za-z0-9_]+)+(?:\.[0-9]+)*")
+
+
+def _validate_ids(action: str, ids: list[str]) -> None:
+    """Exit non-zero, naming every bad argument, if any id is not bead-shaped."""
+    bad = [i for i in ids if not BEAD_ID_RE.fullmatch(i)]
+    if bad:
+        sys.exit(
+            f"bd-track queue {action}: not a bead id: "
+            + ", ".join(repr(i) for i in bad)
+            + " (several ids in one quoted argument? pass each separately)"
+        )
+
 
 # What the automatic sweep after `bd-track stop` removes. Deferred is deliberate (a bead put on
 # ice, or parked in a ``<scope>.operator`` scope by /work-queue), so only an explicit `clean`
@@ -149,6 +168,7 @@ def cmd_queue(
     elif action == "push":
         if not ids:
             sys.exit("bd-track queue push: requires at least one <id>")
+        _validate_ids("push", ids)
         queue = all_queues.get(scope, [])
         added = [i for i in ids if i not in queue]
         already = [i for i in ids if i in queue]
@@ -163,6 +183,7 @@ def cmd_queue(
     elif action == "unshift":
         if not ids or len(ids) != 1:
             sys.exit("bd-track queue unshift: requires exactly one <id>")
+        _validate_ids("unshift", ids)
         bead_id = ids[0]
         queue = all_queues.get(scope, [])
         if bead_id in queue:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import patch
 
@@ -69,21 +70,21 @@ def test_load_all_queues_missing_file_returns_empty(beads_dir):
 
 
 def test_save_then_load_round_trip(beads_dir):
-    data = {"default": ["A", "B"], "tooling": ["C"]}
+    data = {"default": ["t-a", "t-b"], "tooling": ["t-c"]}
     save_all_queues(beads_dir, data)
     assert load_all_queues(beads_dir) == data
 
 
 def test_save_empty_deletes_file(beads_dir):
-    save_all_queues(beads_dir, {"default": ["A"]})
+    save_all_queues(beads_dir, {"default": ["t-a"]})
     save_all_queues(beads_dir, {"default": []})
     assert not (beads_dir / "queue.yaml").exists()
 
 
 def test_save_drops_empty_scopes(beads_dir):
-    save_all_queues(beads_dir, {"default": ["A"], "empty": []})
+    save_all_queues(beads_dir, {"default": ["t-a"], "empty": []})
     loaded = load_all_queues(beads_dir)
-    assert loaded == {"default": ["A"]}
+    assert loaded == {"default": ["t-a"]}
 
 
 # ---------------------------------------------------------------------------
@@ -93,57 +94,95 @@ def test_save_drops_empty_scopes(beads_dir):
 
 def test_push_appends_and_dedups(beads_dir, capsys, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "B"], project_dir=beads_dir.parent)
-    cmd_queue("push", ids=["B", "C"], project_dir=beads_dir.parent)
-    assert load_all_queues(beads_dir) == {"default": ["A", "B", "C"]}
+    cmd_queue("push", ids=["t-a", "t-b"], project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-b", "t-c"], project_dir=beads_dir.parent)
+    assert load_all_queues(beads_dir) == {"default": ["t-a", "t-b", "t-c"]}
 
 
 def test_unshift_prepends_and_moves_existing(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "B", "C"], project_dir=beads_dir.parent)
-    cmd_queue("unshift", ids=["B"], project_dir=beads_dir.parent)
-    assert load_all_queues(beads_dir) == {"default": ["B", "A", "C"]}
+    cmd_queue("push", ids=["t-a", "t-b", "t-c"], project_dir=beads_dir.parent)
+    cmd_queue("unshift", ids=["t-b"], project_dir=beads_dir.parent)
+    assert load_all_queues(beads_dir) == {"default": ["t-b", "t-a", "t-c"]}
+
+
+@pytest.mark.parametrize("bead_id", ["bd-timew-as5", "amo-aqp.23", "PROJ-18077", "chz-a1.2.3"])
+def test_push_accepts_bead_shaped_ids(beads_dir, bead_id):
+    cmd_queue("push", ids=[bead_id], scope_arg="s", project_dir=beads_dir.parent)
+    assert load_all_queues(beads_dir) == {"s": [bead_id]}
+
+
+@pytest.mark.parametrize("bad", ["a b", "amo-hq0 amo-jak", "A", "-x", "amo-aqp.", "amo-", " amo-x"])
+def test_push_rejects_non_id_and_leaves_queue_unchanged(beads_dir, bad):
+    """A quote-joined id list (zsh, no word splitting) must not become one entry."""
+    save_all_queues(beads_dir, {"s": ["t-a"]})
+    with pytest.raises(SystemExit) as exc:
+        cmd_queue("push", ids=["t-b", bad], scope_arg="s", project_dir=beads_dir.parent)
+    assert exc.value.code != 0
+    assert repr(bad) in str(exc.value.code)
+    assert load_all_queues(beads_dir) == {"s": ["t-a"]}
+
+
+def test_unshift_rejects_non_id_and_leaves_queue_unchanged(beads_dir):
+    save_all_queues(beads_dir, {"s": ["t-a"]})
+    with pytest.raises(SystemExit) as exc:
+        cmd_queue("unshift", ids=["a b"], scope_arg="s", project_dir=beads_dir.parent)
+    assert exc.value.code != 0
+    assert load_all_queues(beads_dir) == {"s": ["t-a"]}
+
+
+def test_cli_push_with_space_exits_nonzero(beads_dir):
+    """The bead's done-when: `bd-track queue push --scope s "a b"` fails, queue unchanged."""
+    argv = ["queue", "push", "--scope", "s", "a b", "--project-dir", str(beads_dir.parent)]
+    proc = subprocess.run(
+        [sys.executable, "-m", "bd_track", *argv],
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0
+    assert "'a b'" in proc.stderr
+    assert load_all_queues(beads_dir) == {}
 
 
 def test_pop_removes_and_prints_head(beads_dir, capsys, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "B"], project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a", "t-b"], project_dir=beads_dir.parent)
     capsys.readouterr()  # discard push log
     cmd_queue("pop", project_dir=beads_dir.parent)
     captured = capsys.readouterr()
-    assert captured.out.strip() == "A"
-    assert load_all_queues(beads_dir) == {"default": ["B"]}
+    assert captured.out.strip() == "t-a"
+    assert load_all_queues(beads_dir) == {"default": ["t-b"]}
 
 
 def test_peek_does_not_remove(beads_dir, capsys, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "B"], project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a", "t-b"], project_dir=beads_dir.parent)
     capsys.readouterr()
     cmd_queue("peek", project_dir=beads_dir.parent)
     captured = capsys.readouterr()
-    assert captured.out.strip() == "A"
-    assert load_all_queues(beads_dir) == {"default": ["A", "B"]}
+    assert captured.out.strip() == "t-a"
+    assert load_all_queues(beads_dir) == {"default": ["t-a", "t-b"]}
 
 
 def test_remove_deletes_specific_ids(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "B", "C"], project_dir=beads_dir.parent)
-    cmd_queue("remove", ids=["B"], project_dir=beads_dir.parent)
-    assert load_all_queues(beads_dir) == {"default": ["A", "C"]}
+    cmd_queue("push", ids=["t-a", "t-b", "t-c"], project_dir=beads_dir.parent)
+    cmd_queue("remove", ids=["t-b"], project_dir=beads_dir.parent)
+    assert load_all_queues(beads_dir) == {"default": ["t-a", "t-c"]}
 
 
 def test_clear_scope_removes_only_named(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A"], scope_arg="default", project_dir=beads_dir.parent)
-    cmd_queue("push", ids=["X"], scope_arg="tooling", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a"], scope_arg="default", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-x"], scope_arg="tooling", project_dir=beads_dir.parent)
     cmd_queue("clear", scope_arg="tooling", project_dir=beads_dir.parent)
-    assert load_all_queues(beads_dir) == {"default": ["A"]}
+    assert load_all_queues(beads_dir) == {"default": ["t-a"]}
 
 
 def test_clear_scope_all_empties_everything(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A"], scope_arg="default", project_dir=beads_dir.parent)
-    cmd_queue("push", ids=["X"], scope_arg="tooling", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a"], scope_arg="default", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-x"], scope_arg="tooling", project_dir=beads_dir.parent)
     cmd_queue("clear", scope_arg="all", project_dir=beads_dir.parent)
     assert load_all_queues(beads_dir) == {}
 
@@ -157,15 +196,15 @@ def test_pop_empty_queue_is_noop(beads_dir, capsys, monkeypatch):
 
 def test_push_separates_scopes(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A"], scope_arg="default", project_dir=beads_dir.parent)
-    cmd_queue("push", ids=["B"], scope_arg="tooling", project_dir=beads_dir.parent)
-    assert load_all_queues(beads_dir) == {"default": ["A"], "tooling": ["B"]}
+    cmd_queue("push", ids=["t-a"], scope_arg="default", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-b"], scope_arg="tooling", project_dir=beads_dir.parent)
+    assert load_all_queues(beads_dir) == {"default": ["t-a"], "tooling": ["t-b"]}
 
 
 def test_env_var_sets_scope(beads_dir, monkeypatch):
     monkeypatch.setenv("BD_TRACK_SCOPE", "tooling")
-    cmd_queue("push", ids=["A"], project_dir=beads_dir.parent)
-    assert load_all_queues(beads_dir) == {"tooling": ["A"]}
+    cmd_queue("push", ids=["t-a"], project_dir=beads_dir.parent)
+    assert load_all_queues(beads_dir) == {"tooling": ["t-a"]}
 
 
 # ---------------------------------------------------------------------------
@@ -199,52 +238,52 @@ def _stub_get_issue(
 
 def test_clean_removes_closed_and_deferred(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "B", "C"], scope_arg="pipeline", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a", "t-b", "t-c"], scope_arg="pipeline", project_dir=beads_dir.parent)
 
-    statuses = {"A": "open", "B": "closed", "C": "deferred"}
+    statuses = {"t-a": "open", "t-b": "closed", "t-c": "deferred"}
     monkeypatch.setattr("bd_track.queue.get_issue", _stub_get_issue(statuses))
 
     removed = cmd_clean(project_dir=beads_dir.parent)
     assert removed == 2
-    assert load_all_queues(beads_dir) == {"pipeline": ["A"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["t-a"]}
 
 
 def test_clean_sweeps_all_scopes_by_default(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "B"], scope_arg="pipeline", project_dir=beads_dir.parent)
-    cmd_queue("push", ids=["X", "Y"], scope_arg="tooling", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a", "t-b"], scope_arg="pipeline", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-x", "t-y"], scope_arg="tooling", project_dir=beads_dir.parent)
 
-    statuses = {"A": "open", "B": "closed", "X": "deferred", "Y": "in_progress"}
+    statuses = {"t-a": "open", "t-b": "closed", "t-x": "deferred", "t-y": "in_progress"}
     monkeypatch.setattr("bd_track.queue.get_issue", _stub_get_issue(statuses))
 
     cmd_clean(project_dir=beads_dir.parent)
-    assert load_all_queues(beads_dir) == {"pipeline": ["A"], "tooling": ["Y"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["t-a"], "tooling": ["t-y"]}
 
 
 def test_clean_keeps_unknown_beads_for_prune(beads_dir, monkeypatch):
     """Beads that fail bd lookup are kept by `clean`; `prune` surfaces them."""
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "GHOST"], scope_arg="pipeline", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a", "t-ghost"], scope_arg="pipeline", project_dir=beads_dir.parent)
 
-    statuses = {"A": "open"}  # GHOST not in dict — get_issue raises SystemExit
+    statuses = {"t-a": "open"}  # GHOST not in dict — get_issue raises SystemExit
     monkeypatch.setattr("bd_track.queue.get_issue", _stub_get_issue(statuses))
 
     removed = cmd_clean(project_dir=beads_dir.parent)
     assert removed == 0
-    assert load_all_queues(beads_dir) == {"pipeline": ["A", "GHOST"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["t-a", "t-ghost"]}
 
 
 def test_clean_scope_filter_limits_sweep(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "B"], scope_arg="pipeline", project_dir=beads_dir.parent)
-    cmd_queue("push", ids=["X", "Y"], scope_arg="tooling", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a", "t-b"], scope_arg="pipeline", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-x", "t-y"], scope_arg="tooling", project_dir=beads_dir.parent)
 
-    statuses = {"A": "open", "B": "closed", "X": "closed", "Y": "open"}
+    statuses = {"t-a": "open", "t-b": "closed", "t-x": "closed", "t-y": "open"}
     monkeypatch.setattr("bd_track.queue.get_issue", _stub_get_issue(statuses))
 
     cmd_clean(scope_arg="pipeline", project_dir=beads_dir.parent)
     # Only pipeline scope was swept; tooling untouched.
-    assert load_all_queues(beads_dir) == {"pipeline": ["A"], "tooling": ["X", "Y"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["t-a"], "tooling": ["t-x", "t-y"]}
 
 
 # ---------------------------------------------------------------------------
@@ -319,35 +358,35 @@ def test_generate_no_matches_leaves_queue_unchanged(beads_dir, monkeypatch):
 
 def test_prune_yes_removes_stale(beads_dir, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "B", "C"], scope_arg="pipeline", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a", "t-b", "t-c"], scope_arg="pipeline", project_dir=beads_dir.parent)
 
-    statuses = {"A": "open", "B": "closed", "C": "deferred"}
+    statuses = {"t-a": "open", "t-b": "closed", "t-c": "deferred"}
     monkeypatch.setattr("bd_track.queue.get_issue", _stub_get_issue(statuses))
 
     cmd_prune(scope_arg="pipeline", project_dir=beads_dir.parent, yes=True)
-    assert load_all_queues(beads_dir) == {"pipeline": ["A"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["t-a"]}
 
 
 def test_prune_non_interactive_without_yes_is_report_only(beads_dir, monkeypatch, capsys):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "B"], scope_arg="pipeline", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a", "t-b"], scope_arg="pipeline", project_dir=beads_dir.parent)
 
-    statuses = {"A": "open", "B": "closed"}
+    statuses = {"t-a": "open", "t-b": "closed"}
     monkeypatch.setattr("bd_track.queue.get_issue", _stub_get_issue(statuses))
     monkeypatch.setattr("bd_track.queue.is_interactive", lambda: False)
 
     cmd_prune(scope_arg="pipeline", project_dir=beads_dir.parent, yes=False)
     # Queue unchanged; the proposal was logged but not applied.
-    assert load_all_queues(beads_dir) == {"pipeline": ["A", "B"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["t-a", "t-b"]}
 
 
 def test_prune_detects_scope_mismatch(beads_dir, monkeypatch, capsys):
     """A scope:local bead in 'pipeline' should be flagged for the tooling queue."""
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A"], scope_arg="pipeline", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a"], scope_arg="pipeline", project_dir=beads_dir.parent)
 
-    statuses = {"A": "open"}
-    labels = {"A": ["scope:local", "area:tooling"]}
+    statuses = {"t-a": "open"}
+    labels = {"t-a": ["scope:local", "area:tooling"]}
     monkeypatch.setattr(
         "bd_track.queue.get_issue",
         _stub_get_issue(statuses, labels=labels),
@@ -355,19 +394,19 @@ def test_prune_detects_scope_mismatch(beads_dir, monkeypatch, capsys):
 
     cmd_prune(scope_arg="pipeline", project_dir=beads_dir.parent, yes=True)
     out = capsys.readouterr().out
-    assert "[move]" in out and "A" in out and "scope:local" in out
+    assert "[move]" in out and "t-a" in out and "scope:local" in out
     # Move recommendations are surfaced but not auto-applied.
-    assert load_all_queues(beads_dir) == {"pipeline": ["A"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["t-a"]}
 
 
 def test_prune_detects_dependency_ordering(beads_dir, monkeypatch, capsys):
     """If bead X depends on Y and Y comes later in the queue, flag it."""
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["A", "B"], scope_arg="pipeline", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-a", "t-b"], scope_arg="pipeline", project_dir=beads_dir.parent)
 
-    statuses = {"A": "open", "B": "open"}
+    statuses = {"t-a": "open", "t-b": "open"}
     dependencies = {
-        "A": [{"id": "B", "dependency_type": "blocks", "status": "open"}],
+        "t-a": [{"id": "t-b", "dependency_type": "blocks", "status": "open"}],
     }
     monkeypatch.setattr(
         "bd_track.queue.get_issue",
@@ -378,7 +417,7 @@ def test_prune_detects_dependency_ordering(beads_dir, monkeypatch, capsys):
     out = capsys.readouterr().out
     assert "[reorder]" in out
     # Reorder recommendations are not auto-applied.
-    assert load_all_queues(beads_dir) == {"pipeline": ["A", "B"]}
+    assert load_all_queues(beads_dir) == {"pipeline": ["t-a", "t-b"]}
 
 
 def test_prune_ignores_non_blocking_edges(beads_dir, monkeypatch, capsys):
@@ -388,15 +427,15 @@ def test_prune_ignores_non_blocking_edges(beads_dir, monkeypatch, capsys):
     it first is unworkable. Only blocking edges imply ordering.
     """
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
-    cmd_queue("push", ids=["E.1", "E.2"], scope_arg="pipeline", project_dir=beads_dir.parent)
+    cmd_queue("push", ids=["t-e.1", "t-e.2"], scope_arg="pipeline", project_dir=beads_dir.parent)
 
-    statuses = {"E": "open", "E.1": "open", "E.2": "open", "R": "open"}
+    statuses = {"t-e": "open", "t-e.1": "open", "t-e.2": "open", "t-r": "open"}
     dependencies = {
-        "E.1": [{"id": "E", "dependency_type": "parent-child", "status": "open"}],
-        "E.2": [
-            {"id": "E", "dependency_type": "parent-child", "status": "open"},
-            {"id": "E.1", "dependency_type": "blocks", "status": "open"},
-            {"id": "R", "dependency_type": "related", "status": "open"},
+        "t-e.1": [{"id": "t-e", "dependency_type": "parent-child", "status": "open"}],
+        "t-e.2": [
+            {"id": "t-e", "dependency_type": "parent-child", "status": "open"},
+            {"id": "t-e.1", "dependency_type": "blocks", "status": "open"},
+            {"id": "t-r", "dependency_type": "related", "status": "open"},
         ],
     }
     monkeypatch.setattr(

@@ -22,6 +22,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   on two hosts no longer has one host's backup overwrite the other's. Existing remotes are
   re-pointed on the next cleanup; old `refs/dolt/<database>` refs can be deleted afterwards
   (docs/registry-schema.md, "Dolt push").
+- **`queue push` / `unshift` validate bead IDs** (`bd-timew-uph`): each id must look like a
+  bead id (`prefix-hash`, optional `.N` children, no whitespace), or the command exits
+  non-zero naming the bad argument and leaves the queue unchanged. Several ids passed as one
+  quoted argument (zsh does not word-split `"$T"`) used to be stored as a single entry.
 
 ## [0.7.0] - 2026-10-30
 
