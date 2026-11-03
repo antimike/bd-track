@@ -6,21 +6,62 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-03
+
+Off-site backup for beads data: `cleanup` can export issues, memories and session logs to a
+state repo and push the Dolt database to a private git remote. Keys and semantics:
+docs/registry-schema.md ("State export", "Dolt push").
+
+### Breaking
+
+- **The host config is validated when loaded.** In `~/.config/bd-track/config.yaml`,
+  `global.host_name` must be one git ref component, `global.default_url_prefix` must end in
+  `:` or `/`, `global.dolt_push` / `global.state_export` must be `always`, `never`, `true` or
+  `false`, and `global.dolt_push_timeout` must be a positive number. A host config that
+  fails makes `init-project` exit with an error before changing anything, makes registry
+  commands that scan for clones exit with an error, and makes `cleanup` skip its export and
+  push phases (compact and gc still run). In the registry, a `beads.dolt_push` or
+  `beads.dolt_remote_private` that is not a boolean (YAML 1.2 reads `no` / `off` as
+  strings) skips that project's push with an error.
+- **`queue push` / `unshift` reject ids that are not bead-shaped** (see Changed).
+
 ### Added
 
+- **State export in `cleanup`** (`bd-timew-ayn`): after gc, `bd export` writes the project's
+  issues and `bd remember` memories into a state repo (`global.state_repo`,
+  `global.state_layout`), replaced atomically, so `bd import` of the one file restores both.
+  `global.state_export` (`always` / `never` / `true` / `false`) with a per-project
+  `beads.state_repo` (`true` / `false` or a path) turns it on. bd-track runs no git in the
+  state repo; failures are logged and never stop cleanup.
 - **Session event logs in the state export** (`bd-timew-q9o.1`): `cleanup`'s state export
   copies each project's session logs (billing data, gitignored and outside the Dolt
   database) into `sessions/` beside the issues file, new or grown files only.
+- **Dolt push in `cleanup`** (`bd-timew-ayn`): pushes the project's Dolt database to a
+  private git repo (`global.dolt_remote_url` or `beads.dolt_remote_url`) under
+  `refs/dolt/<host>/<database>`, when `global.dolt_push` / `beads.dolt_push` turn it on.
+  - Refuses the project's own code remotes, public GitHub repos and hosts it cannot check
+    (unless `beads.dolt_remote_private: true`), resolving the real host through git
+    `insteadOf` and `ssh -G`.
+  - Runs `bd dolt push --no-adopt` in its own process group, killed after
+    `global.dolt_push_timeout` seconds (default 120); a failed push is retried next run.
+  - Retries a non-fast-forward rejection (after `bd compact` rewrites history) with
+    `--force` within the remaining timeout.
+  - Works in embedded and server mode; a database shared by several projects is pushed
+    once per run, and a remote whose URL moved to another host is re-pointed.
+  - Logs each attempt as one JSON record in `~/.local/state/bd-track/dolt-push.jsonl`
+    (duration, size, result, the first real error line).
+- **`global.host_name`** (`bd-timew-q9o.2`): names this host in Dolt push refs (default: the
+  short hostname, lowercased), so a project registered on two hosts keeps one backup per
+  host.
 - **Full git URLs in the registry's `remote:`** (`bd-timew-q9o.6`): any URL git accepts, or
   the `owner/repo` shorthand; `global.default_url_prefix` (per host) gives the shorthand a
   clone URL. Matching uses the URL path without the host.
 
 ### Changed
 
-- **Dolt push refs are per host** (`bd-timew-q9o.2`): `refs/dolt/<host>/<database>`, with
-  `global.host_name` (default: the short hostname) naming the host, so a project registered
-  on two hosts no longer has one host's backup overwrite the other's. Existing remotes are
-  re-pointed on the next cleanup; old `refs/dolt/<database>` refs can be deleted afterwards
+- **Dolt push refs are per host** (`bd-timew-q9o.2`): checkouts that ran the pre-release
+  push under `refs/dolt/<database>` have their remotes re-pointed to
+  `refs/dolt/<host>/<database>` on the next cleanup; the old refs can be deleted afterwards
   (docs/registry-schema.md, "Dolt push").
 - **`queue push` / `unshift` validate bead IDs** (`bd-timew-uph`): each id must look like a
   bead id (`prefix-hash`, optional `.N` children, no whitespace), or the command exits
@@ -29,6 +70,11 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **`init-project` sets `backup.git-push: false`** (`bd-timew-4fv`): bd's auto-backup
   stays local instead of pushing to the project's git remote. bd 1.3 already defaults it
   off; the explicit key covers older bd and shows the choice in `.beads/config.yaml`.
+
+### Fixed
+
+- **`init-project` with a bad host config** (`bd-timew-hpw`): exits with `bd-track: <error>`
+  before `bd init` or any file write, instead of a traceback after them.
 
 ## [0.7.0] - 2026-10-30
 
@@ -302,7 +348,8 @@ time-tracking workflow into a multi-module Python package.
   v0.2.0.
 - systemd user units for cleanup and idle-stop timers.
 
-[Unreleased]: https://github.com/antimike/bd-track/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/antimike/bd-track/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/antimike/bd-track/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/antimike/bd-track/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/antimike/bd-track/compare/v0.5.1...v0.6.0
 [0.5.1]: https://github.com/antimike/bd-track/compare/v0.5.0...v0.5.1
