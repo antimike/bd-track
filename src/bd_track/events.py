@@ -44,10 +44,11 @@ SCHEMA_VERSION = 1
 # jsonl-maildir-fallback-unbounded-records for the fallback if that ever changes).
 PIPE_BUF = 4096
 
-# Authoritative log lives alongside the active beads dir so it rides beads sync;
-# this XDG_DATA_HOME path is the server-mode / no-local-.beads fallback (NOT
-# ~/.cache — billing data is not disposable; and distinct from session.py's
-# ~/.local/state pointer, which is machine-local operational state).
+# Authoritative log lives alongside the active beads dir (gitignored, outside the Dolt
+# database: cleanup's state export is what backs it up, bd-timew-q9o.1); this
+# XDG_DATA_HOME path is the server-mode / no-local-.beads fallback (NOT ~/.cache —
+# billing data is not disposable; and distinct from session.py's ~/.local/state
+# pointer, which is machine-local operational state).
 LOG_FALLBACK_DIR = Path.home() / ".local" / "share" / "bd-track"
 # Legacy fallback dir + log subdir; read by path_compat so an un-migrated
 # project keeps logging to (and reading from) its original location until
@@ -74,8 +75,8 @@ def _safe_filename(name: str) -> str:
 def log_dir(project_dir: Path | None = None) -> Path:
     """Resolve the per-session log directory (bd-timew-tq9).
 
-    ``<beads_dir>/bd-track/sessions/`` when a local beads dir exists (rides beads
-    sync); otherwise ``~/.local/share/bd-track/<project-id>/sessions/``.
+    ``<beads_dir>/bd-track/sessions/`` when a local beads dir exists; otherwise
+    ``~/.local/share/bd-track/<project-id>/sessions/``.
     """
     beads_dir: Path | None = None
     try:
@@ -89,6 +90,22 @@ def log_dir(project_dir: Path | None = None) -> Path:
     pid = project_id(root)
     return path_compat(LOG_FALLBACK_DIR / pid / "sessions",
                        _LEGACY_FALLBACK_DIR / pid / "sessions")
+
+
+def log_dirs(project_root: Path, beads_dir: Path | None = None) -> list[Path]:
+    """Every directory that may hold ``project_root``'s session logs, existing or not.
+
+    ``log_dir`` picks one; a project that switched modes (or ran a session before its beads
+    dir existed) can have logs in both, and the state export backs up all of them.
+    ``beads_dir`` defaults to ``<project_root>/.beads``.
+    """
+    root = Path(project_root)
+    bd = Path(beads_dir) if beads_dir is not None else root / ".beads"
+    pid = project_id(root)
+    return [
+        path_compat(bd / "bd-track" / "sessions", bd / "bd-timew" / "sessions"),
+        path_compat(LOG_FALLBACK_DIR / pid / "sessions", _LEGACY_FALLBACK_DIR / pid / "sessions"),
+    ]
 
 
 def _session_log_path(session_id: str, project_dir: Path | None = None) -> Path:

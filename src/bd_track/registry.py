@@ -528,6 +528,17 @@ def state_export_target(project: Project, host: dict) -> tuple[Path, Path] | Non
     return root, root / host["state_layout"].format(project=project.name)
 
 
+def state_sessions_dir(project: Project, host: dict, export_file: Path) -> Path:
+    """Where the export puts ``project``'s session event logs: ``sessions/`` beside the issues
+    export, or ``sessions/<project>/`` there when the layout's directory is shared by all
+    projects (``{project}`` only in the file name), so no two projects share one directory.
+    """
+    sessions = export_file.parent / "sessions"
+    if "{project}" in str(Path(host["state_layout"]).parent):
+        return sessions
+    return sessions / project.name
+
+
 def load_registry_or_exit(explicit: Path | None = None, *, scan: bool | None = None) -> Registry:
     """``load_registry`` for CLI callers: a broken file is a clean ``bd-track:`` exit."""
     try:

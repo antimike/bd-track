@@ -760,3 +760,15 @@ def test_migrate_skips_entry_without_prefix(legacy_setup, home: Path, monkeypatc
     assert "could not read its beads prefix" in capsys.readouterr().out
     assert registry.REPOS_CONFIG.exists()
     assert load_registry(scan=False).get("chezmoi").beads["commit_cadence"] == "1d"  # has prefix
+
+
+def test_state_sessions_dir(tmp_path: Path):
+    from bd_track.registry import Project, state_sessions_dir
+
+    amo = Project("amo", beads={})
+    per_project = _host(state_layout="projects/{project}/beads/issues.jsonl")
+    f = tmp_path / "projects" / "amo" / "beads" / "issues.jsonl"
+    assert state_sessions_dir(amo, per_project, f) == f.parent / "sessions"
+    flat = _host(state_layout="beads/{project}.jsonl")
+    g = tmp_path / "beads" / "amo.jsonl"
+    assert state_sessions_dir(amo, flat, g) == tmp_path / "beads" / "sessions" / "amo"
