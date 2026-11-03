@@ -204,11 +204,13 @@ def stub_bd(monkeypatch):
 
 
 def _cleanup(tmp_path: Path, beads: dict, host: dict, monkeypatch):
-    from bd_track import project, registry
+    from bd_track import events, project, registry
     from bd_track.registry import Project
 
     root = tmp_path / "amo"
-    (root / ".beads").mkdir(parents=True)
+    (root / ".beads").mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(events, "LOG_FALLBACK_DIR", tmp_path / "share" / "bd-track")
+    monkeypatch.setattr(events, "_LEGACY_FALLBACK_DIR", tmp_path / "share" / "bd-timew")
     monkeypatch.setattr(registry, "load_host_config", lambda: {
         "dolt_push": False, "dolt_remote_url": None, "dolt_push_timeout": 120,
         "state_export": False, "state_repo": None,
@@ -275,3 +277,95 @@ def test_cleanup_pushes_after_export(tmp_path: Path, stub_bd, monkeypatch):
     _cleanup(tmp_path, {"prefix": "amo", "state_repo": True}, {"state_repo": str(state)},
              monkeypatch)
     assert pushed == [("amo", 3)]  # after compact, gc and export
+
+
+# ---------------------------------------------------------------------------
+# cleanup: session event logs in the state export (bd-timew-q9o.1)
+# ---------------------------------------------------------------------------
+
+
+def _sessions(tmp_path: Path) -> Path:
+    d = tmp_path / "amo" / ".beads" / "bd-track" / "sessions"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _export_on(tmp_path: Path, stub_bd, monkeypatch, layout="{project}/issues.jsonl") -> Path:
+    state = tmp_path / "state"
+    state.mkdir(exist_ok=True)
+    _cleanup(tmp_path, {"prefix": "amo"},
+             {"state_export": "always", "state_repo": str(state), "state_layout": layout},
+             monkeypatch)
+    return state
+
+
+def test_cleanup_exports_new_session_logs(tmp_path: Path, stub_bd, monkeypatch):
+    logs = _sessions(tmp_path)
+    (logs / "s1.jsonl").write_text('{"event":"start"}\n')
+    (logs / "s2.jsonl").write_text('{"event":"stop"}\n')
+    (logs / "notes.txt").write_text("not a log\n")
+    state = _export_on(tmp_path, stub_bd, monkeypatch)
+    out = state / "amo" / "sessions"
+    assert sorted(p.name for p in out.iterdir()) == ["s1.jsonl", "s2.jsonl"]
+    assert (out / "s1.jsonl").read_text() == '{"event":"start"}\n'
+
+
+def test_cleanup_exports_grown_session_log_and_skips_unchanged(tmp_path, stub_bd, monkeypatch):
+    logs = _sessions(tmp_path)
+    (logs / "s1.jsonl").write_text("a\n")
+    (logs / "s2.jsonl").write_text("b\n")
+    state = _export_on(tmp_path, stub_bd, monkeypatch)
+    out = state / "amo" / "sessions"
+    (logs / "s1.jsonl").write_text("a\nmore\n")  # grown
+    (out / "s2.jsonl").write_text("B\n")  # same size: treated as unchanged, not recopied
+    _export_on(tmp_path, stub_bd, monkeypatch)
+    assert (out / "s1.jsonl").read_text() == "a\nmore\n"
+    assert (out / "s2.jsonl").read_text() == "B\n"
+    assert not list(out.glob(".*.tmp"))
+
+
+def test_cleanup_never_shrinks_a_backed_up_session_log(tmp_path, stub_bd, monkeypatch):
+    logs = _sessions(tmp_path)
+    (logs / "s1.jsonl").write_text("a\n")
+    out = tmp_path / "state" / "amo" / "sessions"
+    out.mkdir(parents=True)
+    (out / "s1.jsonl").write_text("a\nlonger backup\n")
+    _export_on(tmp_path, stub_bd, monkeypatch)
+    assert (out / "s1.jsonl").read_text() == "a\nlonger backup\n"
+
+
+def test_cleanup_exports_fallback_dir_session_logs(tmp_path: Path, stub_bd, monkeypatch):
+    from bd_track.session import project_id
+
+    logs = _sessions(tmp_path)
+    (logs / "s1.jsonl").write_text("beads\n")
+    (logs / "dup.jsonl").write_text("beads copy\n")
+    fallback = tmp_path / "share" / "bd-track" / project_id(tmp_path / "amo") / "sessions"
+    fallback.mkdir(parents=True)
+    (fallback / "s9.jsonl").write_text("fallback\n")
+    (fallback / "dup.jsonl").write_text("fallback copy, longer\n")
+    state = _export_on(tmp_path, stub_bd, monkeypatch)
+    out = state / "amo" / "sessions"
+    assert sorted(p.name for p in out.iterdir()) == ["dup.jsonl", "s1.jsonl", "s9.jsonl"]
+    assert (out / "s9.jsonl").read_text() == "fallback\n"
+    assert (out / "dup.jsonl").read_text() == "beads copy\n"  # first dir wins
+
+
+def test_cleanup_session_logs_flat_layout_get_a_project_dir(tmp_path, stub_bd, monkeypatch):
+    (_sessions(tmp_path) / "s1.jsonl").write_text("a\n")
+    state = _export_on(tmp_path, stub_bd, monkeypatch, layout="{project}.jsonl")
+    assert (state / "sessions" / "amo" / "s1.jsonl").read_text() == "a\n"
+
+
+def test_cleanup_session_logs_off_with_export(tmp_path: Path, stub_bd, monkeypatch):
+    (_sessions(tmp_path) / "s1.jsonl").write_text("a\n")
+    _cleanup(tmp_path, {"prefix": "amo"}, {"state_repo": str(tmp_path / "state")}, monkeypatch)
+    assert not (tmp_path / "state").exists()
+
+
+def test_cleanup_session_logs_copied_even_if_bd_export_fails(tmp_path, stub_bd, monkeypatch):
+    _, outcome = stub_bd
+    outcome["export_rc"] = 1
+    (_sessions(tmp_path) / "s1.jsonl").write_text("a\n")
+    state = _export_on(tmp_path, stub_bd, monkeypatch)
+    assert (state / "amo" / "sessions" / "s1.jsonl").exists()

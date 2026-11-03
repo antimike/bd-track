@@ -676,6 +676,46 @@ def _export_issues(target: tuple[Path, Path], project_root: Path, log) -> None:
     log.info("export: wrote %s", dest)
 
 
+def _export_sessions(sources: list[Path], dest_dir: Path, log) -> None:
+    """Copy the session event logs (billing data, outside the Dolt database) into the state
+    repo's working tree.
+
+    The logs are append-only, one file per session, so only new or grown files are copied,
+    each through a temporary file and an atomic rename. A copy larger than its source is
+    left alone with a warning (a source never shrinks; the backup is not overwritten with
+    less). A name found in two source dirs is copied from the first only.
+    """
+    seen: set[str] = set()
+    copied = 0
+    for src_dir in sources:
+        if not src_dir.is_dir():
+            continue
+        for src in sorted(src_dir.glob("*.jsonl")):
+            if src.name in seen:
+                log.warning("export: %s also in an earlier log dir; skipping this copy", src)
+                continue
+            seen.add(src.name)
+            dest = dest_dir / src.name
+            size = src.stat().st_size
+            have = dest.stat().st_size if dest.exists() else -1
+            if have == size:
+                continue
+            if have > size:
+                log.warning("export: %s is larger than its source %s; leaving it", dest, src)
+                continue
+            tmp = dest.with_name(f".{dest.name}.tmp")
+            try:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(src, tmp)
+                tmp.replace(dest)
+            except OSError as err:
+                tmp.unlink(missing_ok=True)
+                log.error("export: copying %s failed: %s", src, err)
+                continue
+            copied += 1
+    log.info("export: %d session log(s) copied to %s", copied, dest_dir)
+
+
 def cmd_cleanup(
     days: int,
     *,
@@ -738,6 +778,14 @@ def cmd_cleanup(
         target = _resolve_export(project, host, log)
         if target is not None:
             _export_issues(target, project_root, log)
+            if target[0].is_dir():
+                from bd_track.events import log_dirs
+                from bd_track.registry import state_sessions_dir
+
+                _export_sessions(
+                    log_dirs(project_root, beads_dir),
+                    state_sessions_dir(project, host, target[1]), log,
+                )
         push_project(project, project_root, host, log, pushed)
 
     log.info("Cleanup complete")
