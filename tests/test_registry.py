@@ -217,6 +217,7 @@ def test_host_config_defaults_and_sources(home: Path):
         "state_export": False,
         "state_repo": None,
         "state_layout": "{project}/issues.jsonl",
+        "host_name": registry.default_host_name(),
         "defaults": {"statuses": [], "hooks": []},
     }
     registry.REPOS_CONFIG.write_text("global: {idle_stop_hours: 2}\nrepos: []\n")
@@ -772,3 +773,26 @@ def test_state_sessions_dir(tmp_path: Path):
     flat = _host(state_layout="beads/{project}.jsonl")
     g = tmp_path / "beads" / "amo.jsonl"
     assert state_sessions_dir(amo, flat, g) == tmp_path / "beads" / "sessions" / "amo"
+
+
+@pytest.mark.parametrize(
+    "name, ok",
+    [
+        ("laptop", True), ("wsl-box_2", True), ("a.b", True),
+        ("", False), ("a/b", False), (".hidden", False), ("x.lock", False), ("end.", False),
+        ("a..b", False), ("sp ace", False), ("a:b", False), ("@", False), ("a@{b", False),
+        ("a~1", False), ("a^", False), ("a*", False), ("a[b", False), ("a\\b", False), (3, False),
+    ],
+)
+def test_is_ref_component(name, ok):
+    assert registry.is_ref_component(name) is ok
+
+
+def test_host_name_default_and_validation(home: Path, monkeypatch):
+    monkeypatch.setattr(registry.socket, "gethostname", lambda: "Box.example.org")
+    assert load_host_config()["host_name"] == "box"
+    registry.HOST_CONFIG.write_text("global: {host_name: work-laptop}\n")
+    assert load_host_config()["host_name"] == "work-laptop"
+    registry.HOST_CONFIG.write_text("global: {host_name: 'a/b'}\n")
+    with pytest.raises(RegistryError, match="host_name must be"):
+        load_host_config()

@@ -30,6 +30,7 @@ import datetime as dt
 import json
 import os
 import re
+import socket
 import subprocess
 import sys
 import tempfile
@@ -433,6 +434,7 @@ def load_host_config() -> dict:
     host.setdefault("state_export", False)
     host.setdefault("state_repo", None)
     host.setdefault("state_layout", DEFAULT_STATE_LAYOUT)
+    host.setdefault("host_name", default_host_name())
     defaults = dict(host.get("defaults") or {})
     defaults.setdefault("statuses", [])
     defaults.setdefault("hooks", [])
@@ -450,7 +452,30 @@ def load_host_config() -> dict:
             f"(got {timeout!r})"
         )
     _check_layout(host["state_layout"], source)
+    if not is_ref_component(host["host_name"]):
+        raise RegistryError(
+            f"{source}: global.host_name must be usable as one git ref component (letters, "
+            f"digits, '-', '_', '.'; no '/', no leading '.') (got {host['host_name']!r})"
+        )
     return host
+
+
+def default_host_name() -> str:
+    """The short hostname, lowercased: ``global.host_name`` when unset."""
+    return socket.gethostname().split(".")[0].lower()
+
+
+_REF_BAD = re.compile(r"[\x00-\x20\x7f~^:?*\[\\/]|\.\.|@\{")
+
+
+def is_ref_component(name: object) -> bool:
+    """Whether ``name`` is valid as one ``/``-free component of a git ref name
+    (``git check-ref-format`` rules)."""
+    return (
+        isinstance(name, str) and bool(name) and name != "@"
+        and not name.startswith(".") and not name.endswith((".", ".lock"))
+        and not _REF_BAD.search(name)
+    )
 
 
 def _check_layout(layout: object, source: Path) -> None:
@@ -618,6 +643,7 @@ def set_project(name: str, values: dict, explicit: Path | None = None) -> Path:
 HOST_KEYS = (
     "check_interval", "idle_stop_hours", "dolt_push", "defaults", "scan_roots",
     "dolt_remote_url", "dolt_push_timeout", "state_export", "state_repo", "state_layout",
+    "host_name",
 )
 
 
