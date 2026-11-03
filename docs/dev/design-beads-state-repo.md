@@ -82,7 +82,8 @@ Shape:
 
 - **One private git repo, distinct refs.** Dolt can use a git repository as a remote, storing
   its data under a git ref (`dolt remote add --ref <ref>`, default `refs/dolt/data`). Each
-  database pushes under its own ref, `refs/dolt/<database>`, so all databases share one repo.
+  database pushes under its own ref, `refs/dolt/<host>/<database>` (`bd-timew-q9o.2`), so all
+  databases and hosts share one repo.
   Per database rather than per project, because a shared server's global database can serve
   several projects; for embedded and one-database-per-project setups the two coincide.
   Ordinary clones do not fetch `refs/dolt/*`. **Verified 2026-11-02** (`bd-timew-ayn.3`, Dolt
@@ -141,12 +142,16 @@ bd 1.3.
    still restored, and both databases pushed normally afterwards. bd-track does not run it:
    GitHub drops unreferenced objects on its own schedule.
 
-**Open (for MH): one ref per database, shared by hosts.** A project registered on two hosts has
+**Resolved 2026-11-02 (MH, `bd-timew-q9o.2`): ref per host.** Was open: one ref per database,
+shared by hosts. A project registered on two hosts has
 two databases with the same name, pushing to the same `refs/dolt/<database>`. With the forced
 retry, the last host to push replaces the other's history in the backup (each host's own
 database is unaffected). Options: accept it (the backup is a disaster copy of whichever host
 pushed last), set `dolt_push` on one host only, or qualify refs by host
 (`refs/dolt/<host>/<database>`), which keeps every host's copy at the cost of more refs.
+Chosen: ref per host. Verified with Dolt 2.4.0: two hosts' pushes of one database name
+coexist; an old `refs/dolt/<database>` remote is re-pointed; after deleting the old ref,
+`dolt clone --ref refs/dolt/<host>/<database>` restores.
 - **bd's own `no-push` stays on** in each project: only the cleanup timer pushes.
 
 > **WSL2 warning.** Dolt pushes have stalled on WSL2 network stacks (MTU/PMTU black holes, TCP

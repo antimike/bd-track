@@ -77,6 +77,7 @@ global:
   dolt_push: false            # always | never | true | false
   dolt_remote_url: ~          # git repo for Dolt pushes (none: no default)
   dolt_push_timeout: 120      # seconds before a push is killed
+  host_name: laptop           # this host in Dolt push refs (default: short hostname, lowercased)
   state_export: false         # always | never | true | false
   state_repo: ~/state         # path of the state repo's working tree (none: no default repo)
   state_layout: "{project}/issues.jsonl"   # export file inside the state repo
@@ -122,13 +123,16 @@ Design: [dev/design-beads-state-repo.md](dev/design-beads-state-repo.md#dolt-pus
 
 - **Where:** `beads.dolt_remote_url`, else `global.dolt_remote_url`, a git repo that may hold
   many databases. bd-track adds a Dolt remote named `bd-track-backup` to the project's database
-  (`CALL dolt_remote('add', '--ref', 'refs/dolt/<database>', …)`), so each database has its
-  own ref, and re-points it when the URL or ref changes. Use a URL Dolt reads as git
+  (`CALL dolt_remote('add', '--ref', 'refs/dolt/<host>/<database>', …)`), so each database
+  has its own ref per host, and re-points it when the URL or ref changes. `<host>` is
+  `global.host_name`, default the short hostname, lowercased; it must be one valid git ref
+  component (no `/`, no leading `.`, no spaces or `~^:?*[\`, not ending in `.` or `.lock`). A
+  project registered on two hosts keeps both hosts' copies. Use a URL Dolt reads as git
   (`git@host:owner/repo.git`, an `https://…/repo.git`, or a local path). The repo needs at least
   one branch before the first push.
 - **Modes:** embedded databases are reached with `dolt sql` in their directory, server-mode
   databases (a shared server, or the global database) with `bd sql`. The ref is named after the
-  **database**, not the project: projects sharing a database push it once per cleanup run (the
+  host and the **database**, not the project: projects sharing a database push it once per cleanup run (the
   first such project with push on decides the URL). A server that is down skips the push.
 - **Guard:** bd-track refuses a URL that names one of the code repo's own git remotes. It then
   resolves the URL's real host: git's `url.<base>.insteadOf` rewrites (`git ls-remote
@@ -144,7 +148,8 @@ Design: [dev/design-beads-state-repo.md](dev/design-beads-state-repo.md#dolt-pus
 - **After compaction:** `bd compact` rewrites history, so the next plain push is rejected as
   non-fast-forward. bd-track then pushes again with `--force` (the ref is its own and the remote
   passed the guard), within what is left of the timeout. Any other failure is not forced.
-- **Restore:** `dolt clone --ref refs/dolt/<database> <url> <dir>`; for an embedded project,
+- **Restore:** pick the host's copy (`git ls-remote <url> 'refs/dolt/*'` lists them), then
+  `dolt clone --ref refs/dolt/<host>/<database> <url> <dir>`; for an embedded project,
   `bd init --prefix <prefix>` in a fresh clone, then replace `.beads/embeddeddolt/<database>`
   with the cloned directory.
 - **Server mode:** the push runs inside the Dolt server (`CALL DOLT_PUSH('bd-track-backup',
@@ -158,7 +163,15 @@ Design: [dev/design-beads-state-repo.md](dev/design-beads-state-repo.md#dolt-pus
     unit without either cannot authenticate; the push fails and the error is logged. A hardware
     key that is not plugged in fails the same way.
   - Projects sharing a database (`bd init --server --database <db>`) push it once per run,
-    under `refs/dolt/<db>`.
+    under `refs/dolt/<host>/<db>`.
+
+- **Migrating from `refs/dolt/<database>`** (bd-track before `bd-timew-q9o.2`): the next
+  cleanup re-points the `bd-track-backup` remote to the host ref and pushes there. The old
+  `refs/dolt/<database>` ref stays in the backup repo, frozen at its last push; it still
+  restores. Once each host has pushed its own ref, delete it to avoid confusion: `git push <url>
+  --delete refs/dolt/<database>` (or `git update-ref -d` in a local bare repo). Delete it
+  *before* the first push if a host name equals a database name: git cannot hold both
+  `refs/dolt/<name>` and `refs/dolt/<name>/<database>`.
 
 ### Push timing log
 
@@ -171,9 +184,9 @@ pushes are safe outside a session). bd-track never trims it; delete it to start 
 |---|---|
 | `v` | Record version, `1`. Bumped only when a field changes meaning; new fields may appear without it, so readers should select fields by name |
 | `timestamp` | UTC, ISO 8601, when the push finished |
-| `host` | Machine hostname (useful if logs from several hosts are compared) |
+| `host` | Machine hostname as the OS reports it, not `global.host_name` (useful if logs from several hosts are compared) |
 | `project` | Registry name of the project whose cleanup ran the push |
-| `database` | Dolt database pushed (the ref is `refs/dolt/<database>`) |
+| `database` | Dolt database pushed (the ref is `refs/dolt/<host_name>/<database>`) |
 | `mode` | `"embedded"` or `"server"` |
 | `remote` | The configured `dolt_remote_url` |
 | `db_bytes` | On-disk size of the embedded database in bytes (a proxy: the push sends only new chunks); `null` in server mode |
@@ -308,4 +321,5 @@ implement.
 | 2026-11-01 | State export: `global.state_export` is a four-valued switch like `dolt_push`; `beads.state_repo` is `true`/`false` or a path (on, and that repo); `global.state_repo` is the default repo and `global.state_layout` a `{project}` template, default `{project}/issues.jsonl` (`bd-timew-ayn.2`, MH). |
 | 2026-11-02 | Dolt push: bd-track provisions a `bd-track-backup` remote through SQL from `dolt_remote_url` (project, else host) under `refs/dolt/<database>`, in embedded and server modes, one push per database per run; the guard resolves the real host (`git ls-remote --get-url`, `ssh -G`), refuses code remotes and public GitHub repos (API check), and other hosts unless `beads.dolt_remote_private: true`; `global.dolt_push_timeout` (default 120 s) kills a stalled push, server-side too (`bd-timew-ayn.3`, MH). |
 | 2026-11-02 | The state export includes `bd remember` memories (`--include-memories`), with no setting: a backup that drops them loses data that exists only in `.beads/` (`bd-timew-ayn.2`, MH). |
+| 2026-11-02 | Dolt push refs are `refs/dolt/<host>/<database>`, host = `global.host_name` (default the short hostname): a project on two hosts pushed both to one ref, and the forced retry let the last host replace the other's copy. Ref per host, not branch per host: a Dolt remote keeps all branches in one store under one git ref, and `reset-data` rebuilds it from local HEAD, wiping other hosts' branches (`bd-timew-q9o.2`, MH). |
 | 2026-11-02 | The state export copies session event logs to `sessions/` beside the issues file (`sessions/<project>/` for a flat layout), new or grown files only, with no setting: they are billing data outside every other backup (`bd-timew-q9o.1`). |

@@ -12,6 +12,14 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   copies each project's session logs (billing data, gitignored and outside the Dolt
   database) into `sessions/` beside the issues file, new or grown files only.
 
+### Changed
+
+- **Dolt push refs are per host** (`bd-timew-q9o.2`): `refs/dolt/<host>/<database>`, with
+  `global.host_name` (default: the short hostname) naming the host, so a project registered
+  on two hosts no longer has one host's backup overwrite the other's. Existing remotes are
+  re-pointed on the next cleanup; old `refs/dolt/<database>` refs can be deleted afterwards
+  (docs/registry-schema.md, "Dolt push").
+
 ## [0.7.0] - 2026-10-30
 
 ### Added
