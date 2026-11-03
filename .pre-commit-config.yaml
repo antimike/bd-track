@@ -1,0 +1,16 @@
+# Install once per clone: uv run pre-commit install
+# Hooks call the ruff pinned in uv.lock (via `uv run`), so pre-commit,
+# `just lint` and CI always agree on the ruff version.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: uv run ruff check --force-exclude
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        entry: uv run ruff format --force-exclude
+        language: system
+        types_or: [python, pyi]
