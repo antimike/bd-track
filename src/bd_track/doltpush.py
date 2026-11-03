@@ -4,8 +4,10 @@ Design: docs/dev/design-beads-state-repo.md, "Dolt push"; keys: docs/registry-sc
 
 - **Where**: ``beads.dolt_remote_url``, else ``global.dolt_remote_url``. bd-track provisions a
   Dolt remote named ``bd-track-backup`` with ``CALL dolt_remote('add', '--ref',
-  'refs/dolt/<database>', ...)``, so many databases share one repo. One ref per *database*:
-  projects that share a database (a shared server's global database) push it once per run.
+  'refs/dolt/<host>/<database>', ...)``, so many databases and hosts share one repo. One ref
+  per *database* per host (``global.host_name``): projects that share a database (a shared
+  server's global database) push it once per run, and a project registered on two hosts keeps
+  both hosts' copies (``bd-timew-q9o.2``).
 - **Modes**: SQL goes through ``dolt sql`` in the database directory (embedded mode; ``bd sql``
   does not support it) or ``bd sql`` (server modes).
 - **Guard**: never push to one of the code repo's own remotes. The URL's real host is resolved
@@ -304,6 +306,11 @@ def remotes(db: Database) -> dict[str, tuple[str, str | None]]:
     return found
 
 
+def backup_ref(host_name: str, database: str) -> str:
+    """The git ref a database is pushed under: ``refs/dolt/<host>/<database>``."""
+    return f"refs/dolt/{host_name}/{database}"
+
+
 def ensure_remote(db: Database, url: str, ref: str, log) -> None:
     """Add (or re-point) the ``bd-track-backup`` remote; bd-track owns that name."""
     current = remotes(db).get(REMOTE_NAME)
@@ -504,7 +511,7 @@ def push_project(
         if pushed is not None and db.key in pushed:
             log.info("%s (database %s already tried this run)", phase, db.name)
             return None
-        ref = f"refs/dolt/{db.name}"
+        ref = backup_ref(host["host_name"], db.name)
         log.info("%s of %s to %s (%s)", phase, db.name, url, ref)
         check_remote(url, project, project_root)
         ensure_remote(db, url, ref, log)

@@ -22,7 +22,7 @@ from bd_track.doltpush import PushResult, PushSkipped, check_remote, same_repo
 from bd_track.registry import Project
 
 log = logging.getLogger("test-doltpush")
-HOST = {"dolt_push": True, "dolt_remote_url": None, "dolt_push_timeout": 120}
+HOST = {"dolt_push": True, "dolt_remote_url": None, "dolt_push_timeout": 120, "host_name": "h1"}
 needs_dolt = pytest.mark.skipif(
     not (shutil.which("dolt") and shutil.which("bd")), reason="needs bd and dolt"
 )
@@ -241,7 +241,7 @@ def test_push_project_flow(tmp_path: Path, stubbed):
     project = Project("amo", beads={"prefix": "amo", "dolt_remote_url": "/srv/b.git"})
     host = {**HOST, "dolt_remote_url": "/srv/default.git", "dolt_push_timeout": 30}
     assert doltpush.push_project(project, tmp_path, host, log).ok
-    assert stubbed == ["guard", ("remote", "/srv/b.git", "refs/dolt/amo"), ("push", 30)]
+    assert stubbed == ["guard", ("remote", "/srv/b.git", "refs/dolt/h1/amo"), ("push", 30)]
 
 
 def test_push_project_guard_blocks_push(tmp_path: Path, stubbed, monkeypatch):
@@ -351,7 +351,12 @@ def test_push_end_to_end(tmp_path: Path):
                           check=True, text=True, capture_output=True).stdout.split()
 
     db = doltpush.open_database(root)
-    assert not db.server and f"refs/dolt/{db.name}" in refs
+    assert not db.server and f"refs/dolt/h1/{db.name}" in refs
+    # a second host pushes the same database name beside the first, not over it (q9o.2)
+    assert doltpush.push_project(project, root, {**host, "host_name": "h2"}, log).ok
+    refs = subprocess.run(["git", "-C", str(remote), "for-each-ref", "--format=%(refname)"],
+                          check=True, text=True, capture_output=True).stdout.split()
+    assert {f"refs/dolt/h1/{db.name}", f"refs/dolt/h2/{db.name}"} <= set(refs)
     doltpush.ensure_remote(db, str(remote), "refs/dolt/other", log)  # re-point
     assert doltpush.remotes(db)[doltpush.REMOTE_NAME][1] == "refs/dolt/other"
     # same repo name on another host is a different location: re-point (bd-timew-ayn.7)
