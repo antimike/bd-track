@@ -61,8 +61,47 @@ def test_normalize_remote_forms(remote: str):
     assert normalize_remote(remote) == "antimike/amontillado"
 
 
-def test_normalize_remote_rejects_junk():
-    assert normalize_remote("not a remote") is None
+@pytest.mark.parametrize("remote", ["not a remote", "", "justaname", "git@host:repo.git", "a b/c"])
+def test_normalize_remote_rejects_junk(remote: str):
+    assert normalize_remote(remote) is None
+
+
+@pytest.mark.parametrize(
+    "remote, key",
+    [
+        ("git@gitlab.com:group/sub/repo.git", "group/sub/repo"),  # nested path kept
+        ("https://gitlab.example.org/group/sub/repo", "group/sub/repo"),
+        ("ssh://git@host:2222/o/r.git", "o/r"),
+        ("git+ssh://git@github.com/./o/r.git", "o/r"),  # Dolt's scp rewrite
+        ("/srv/git/tools/x.git", "srv/git/tools/x"),
+        ("file:///srv/git/x.git", "srv/git/x"),
+        ("~/repos/x.git", "repos/x"),
+    ],
+)
+def test_normalize_remote_keeps_full_path(remote: str, key: str):
+    assert normalize_remote(remote) == key
+
+
+@pytest.mark.parametrize(
+    "remote, shorthand",
+    [("antimike/bd-track", True), ("a.b/c_d", True), ("git@github.com:o/r", False),
+     ("https://github.com/o/r", False), ("/srv/o", False), ("./o/r", False),
+     ("o/r/s", False), (".o/r", False)],
+)
+def test_is_shorthand(remote: str, shorthand: bool):
+    assert registry.is_shorthand(remote) is shorthand
+
+
+def test_clone_url():
+    from bd_track.registry import Project, clone_url
+
+    host = {"default_url_prefix": "git@me.github.com:"}
+    short = Project("a", remote="o/a", remote_spec="o/a")
+    full = Project("b", remote="o/b", remote_spec="https://git.example.org/o/b.git")
+    assert clone_url(short, host) == "git@me.github.com:o/a"
+    assert clone_url(short, {"default_url_prefix": None}) is None
+    assert clone_url(full, {"default_url_prefix": None}) == "https://git.example.org/o/b.git"
+    assert clone_url(Project("c"), host) is None
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +158,24 @@ def test_new_schema(home: Path):
     assert reg.beads_projects() == [amo]
     assert reg.by_path(Path("~/src/amo")) is amo
 
+
+
+def test_full_url_remotes_match_by_path(home: Path, tmp_path: Path, caplog):
+    nested = _clone(tmp_path / "src" / "repo", "git@gl-alias:group/sub/repo.git")  # ssh alias
+    other = _clone(tmp_path / "src" / "other", "git@gitlab.com:sub/repo.git")
+    registry.DEFAULT_REGISTRY.write_text(
+        "projects:\n"
+        "  nested:\n    remote: https://gitlab.com/group/sub/repo.git\n"
+        "  short:\n    remote: sub/repo\n"
+        "  junk:\n    remote: not a url\n"
+    )
+    reg = load_registry()
+    assert reg.get("nested").remote_spec == "https://gitlab.com/group/sub/repo.git"
+    assert reg.for_directory(nested) is reg.get("nested")  # full path, host ignored
+    assert reg.for_directory(other) is reg.get("short")  # not the nested project
+    junk = reg.get("junk")
+    assert (junk.remote, junk.remote_spec) == (None, None)
+    assert "not a git URL or owner/repo" in caplog.text
 
 def test_legacy_schema(home: Path, tmp_path: Path):
     clone = _clone(tmp_path / "src" / "amontillado", "git@github.com:antimike/amontillado.git")
@@ -218,6 +275,7 @@ def test_host_config_defaults_and_sources(home: Path):
         "state_repo": None,
         "state_layout": "{project}/issues.jsonl",
         "host_name": registry.default_host_name(),
+        "default_url_prefix": None,
         "defaults": {"statuses": [], "hooks": []},
     }
     registry.REPOS_CONFIG.write_text("global: {idle_stop_hours: 2}\nrepos: []\n")
@@ -796,3 +854,15 @@ def test_host_name_default_and_validation(home: Path, monkeypatch):
     registry.HOST_CONFIG.write_text("global: {host_name: 'a/b'}\n")
     with pytest.raises(RegistryError, match="host_name must be"):
         load_host_config()
+
+
+@pytest.mark.parametrize("value", ["''", "git@github.com", "3", "true"])
+def test_default_url_prefix_validated(home: Path, value: str):
+    registry.HOST_CONFIG.write_text(f"global: {{default_url_prefix: {value}}}\n")
+    with pytest.raises(RegistryError, match="default_url_prefix must be"):
+        load_host_config()
+
+
+def test_default_url_prefix_accepted(home: Path):
+    registry.HOST_CONFIG.write_text("global: {default_url_prefix: 'git@me.github.com:'}\n")
+    assert load_host_config()["default_url_prefix"] == "git@me.github.com:"

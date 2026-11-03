@@ -7,6 +7,9 @@ module implements them. Summary:
   exists → legacy ``~/.config/bd-track/repos.yaml``.
 - **Schema**: ``projects: {<name>: {remote, path, beads: {prefix, ...}}}``. A legacy
   ``repos:`` list (keyed by absolute path) is read as projects named by path basename.
+- **Remotes** (``bd-timew-q9o.6``): ``remote`` is any URL git accepts, or the ``owner/repo``
+  shorthand. Projects match clones by the URL's path (host ignored, so ssh host aliases match);
+  a shorthand's clone URL is the host's ``default_url_prefix`` + ``owner/repo``.
 - **Bridge** (until ``bd-timew-d0t.4`` migrates ``repos.yaml``): when the registry is the new
   file and ``repos.yaml`` also exists, each legacy entry fills in the path and bd-track settings
   of the project whose remote matches its clone's ``origin``, or is added under its basename.
@@ -62,7 +65,11 @@ BD_TRACK_BEADS_KEYS = (
 )
 SHARED_KEYS = ("remote", "path")
 
-_REMOTE_RE = re.compile(r"[:/](?P<owner>[^/:]+)/(?P<repo>[^/:]+?)(?:\.git)?/?$")
+# The owner/repo shorthand: exactly two components, no scheme, no ':'.
+_SHORTHAND_RE = re.compile(r"[A-Za-z0-9_-][A-Za-z0-9_.-]*/[A-Za-z0-9_.-]+")
+_SCHEME_RE = re.compile(r"^[A-Za-z][A-Za-z0-9+.-]*://")
+# scp form [user@]host:path; a ':' after the first '/' is part of a path instead.
+_SCP_RE = re.compile(r"^(?:[^@/:\s]+@)?[^/:\s]+:(?!//)(?P<path>.*)$")
 
 
 class RegistryError(Exception):
@@ -74,10 +81,11 @@ class Project:
     """One registry entry. ``path`` is absolute when known (from the file or the bridge)."""
 
     name: str
-    remote: str | None = None
+    remote: str | None = None  # match key (``normalize_remote``)
     path: Path | None = None
     beads: dict = field(default_factory=dict)
     legacy: bool = False  # came from (or was completed by) repos.yaml
+    remote_spec: str | None = None  # ``remote`` as written in the registry
 
     @property
     def uses_beads(self) -> bool:
@@ -134,15 +142,45 @@ def _yaml(typ: str = "safe") -> YAML:
     return yaml
 
 
+def is_shorthand(remote: str) -> bool:
+    """Whether ``remote`` is the ``owner/repo`` shorthand rather than a URL or path."""
+    return bool(_SHORTHAND_RE.fullmatch(remote.strip()))
+
+
 def normalize_remote(remote: str) -> str | None:
-    """``owner/repo`` (lowercase) from any URL or ``owner/repo`` form, else ``None``."""
-    text = remote.strip()
-    if "/" in text and ":" not in text and text.count("/") == 1:
-        text = "/" + text
-    match = _REMOTE_RE.search(text)
-    if not match:
+    """The match key of a remote: its path, lowercased, without ``.git`` or edge slashes.
+
+    The host is dropped, so ``git@github.com:o/r.git``, an ssh alias ``git@me.github.com:o/r``,
+    ``https://github.com/o/r`` and the shorthand ``o/r`` all give ``o/r``, while a nested path
+    (``group/sub/repo``) keeps every component. ``None`` for anything with fewer than two path
+    components or with whitespace.
+    """
+    text = remote.strip().removeprefix("git+")
+    if not text or any(c.isspace() for c in text):
         return None
-    return f"{match['owner']}/{match['repo']}".lower()
+    if _SCHEME_RE.match(text):
+        path = text.split("://", 1)[1].partition("/")[2]
+    elif (match := _SCP_RE.match(text)) and not text.startswith(("/", "~", ".")):
+        path = match["path"]
+    else:
+        path = text
+    path = path.strip("/").removesuffix(".git").removeprefix("~/").strip("/")
+    parts = [part for part in path.split("/") if part not in ("", ".")]  # Dolt: host/./o/r
+    if len(parts) < 2:
+        return None
+    return "/".join(parts).lower()
+
+
+def clone_url(project: Project, host: dict) -> str | None:
+    """The URL to clone ``project`` from: its ``remote`` when that is a URL or path, or
+    ``global.default_url_prefix`` + the ``owner/repo`` shorthand; ``None`` when neither."""
+    spec = project.remote_spec
+    if not spec:
+        return None
+    if is_shorthand(spec):
+        prefix = host.get("default_url_prefix")
+        return f"{prefix}{spec}" if prefix else None
+    return spec
 
 
 def origin_remote(path: Path) -> str | None:
@@ -215,11 +253,20 @@ def _parse_projects(data: dict, source: Path) -> dict[str, Project]:
             root_log.warning("%s: skipping project %r (entry is not a mapping)", source, name)
             continue
         beads = entry.get("beads") or {}
+        spec = str(entry["remote"]).strip() if entry.get("remote") else None
+        remote = normalize_remote(spec) if spec else None
+        if spec and remote is None:
+            root_log.warning(
+                "%s: project %r: remote %r is not a git URL or owner/repo; ignored",
+                source, name, spec,
+            )
+            spec = None
         projects[name] = Project(
             name=name,
-            remote=normalize_remote(str(entry["remote"])) if entry.get("remote") else None,
+            remote=remote,
             path=_expand(entry["path"]) if entry.get("path") else None,
             beads=dict(beads) if isinstance(beads, dict) else {},
+            remote_spec=spec,
         )
     return projects
 
@@ -435,6 +482,7 @@ def load_host_config() -> dict:
     host.setdefault("state_repo", None)
     host.setdefault("state_layout", DEFAULT_STATE_LAYOUT)
     host.setdefault("host_name", default_host_name())
+    host.setdefault("default_url_prefix", None)
     defaults = dict(host.get("defaults") or {})
     defaults.setdefault("statuses", [])
     defaults.setdefault("hooks", [])
@@ -456,6 +504,14 @@ def load_host_config() -> dict:
         raise RegistryError(
             f"{source}: global.host_name must be usable as one git ref component (letters, "
             f"digits, '-', '_', '.'; no '/', no leading '.') (got {host['host_name']!r})"
+        )
+    prefix = host["default_url_prefix"]
+    if prefix is not None and not (
+        isinstance(prefix, str) and prefix.strip() and prefix.endswith((":", "/"))
+    ):
+        raise RegistryError(
+            f"{source}: global.default_url_prefix must be a URL prefix ending in ':' or '/', "
+            f"e.g. 'git@github.com:' (got {prefix!r})"
         )
     return host
 
@@ -643,7 +699,7 @@ def set_project(name: str, values: dict, explicit: Path | None = None) -> Path:
 HOST_KEYS = (
     "check_interval", "idle_stop_hours", "dolt_push", "defaults", "scan_roots",
     "dolt_remote_url", "dolt_push_timeout", "state_export", "state_repo", "state_layout",
-    "host_name",
+    "host_name", "default_url_prefix",
 )
 
 
