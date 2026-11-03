@@ -25,6 +25,16 @@ install-dev: check-deps
 test *args:
     uv run pytest -q {{args}}
 
+# Lint and check formatting (what pre-commit and CI enforce).
+lint:
+    uv run ruff check src tests
+    uv run ruff format --check src tests
+
+# Apply ruff formatting and safe lint fixes.
+fmt:
+    uv run ruff format src tests
+    uv run ruff check --fix src tests
+
 # Remove the pipx install.
 uninstall:
     pipx uninstall bd-track
