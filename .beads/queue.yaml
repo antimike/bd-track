@@ -4,3 +4,9 @@ architecture:
 cutover:
 - bd-timew-cjq
 - bd-timew-a33
+disaster-recovery:
+- bd-timew-q9o.1
+- bd-timew-q9o.2
+- bd-timew-q9o.3
+- bd-timew-q9o.4
+- bd-timew-q9o.5
