@@ -32,13 +32,14 @@ from rich_argparse import RawDescriptionRichHelpFormatter
 # back to the legacy one only when the new one is absent.
 # ---------------------------------------------------------------------------
 
+
 def env_compat(name: str, default: str | None = None) -> str | None:
     """Read ``BD_TRACK_*`` env var, falling back to the legacy ``BD_TIMEW_*``."""
     val = os.environ.get(name)
     if val is not None:
         return val
     if name.startswith("BD_TRACK_"):
-        val = os.environ.get("BD_TIMEW_" + name[len("BD_TRACK_"):])
+        val = os.environ.get("BD_TIMEW_" + name[len("BD_TRACK_") :])
         if val is not None:
             return val
     return default
@@ -53,10 +54,10 @@ def path_compat(new: Path, old: Path) -> Path:
 # Constants
 # ---------------------------------------------------------------------------
 
-_CONFIG_DIR = path_compat(Path.home() / ".config" / "bd-track",
-                          Path.home() / ".config" / "bd-timew")
-_CACHE_DIR = path_compat(Path.home() / ".cache" / "bd-track",
-                         Path.home() / ".cache" / "bd-timew")
+_CONFIG_DIR = path_compat(
+    Path.home() / ".config" / "bd-track", Path.home() / ".config" / "bd-timew"
+)
+_CACHE_DIR = path_compat(Path.home() / ".cache" / "bd-track", Path.home() / ".cache" / "bd-timew")
 
 REPOS_CONFIG = _CONFIG_DIR / "repos.yaml"
 CLEANUP_STATE = _CACHE_DIR / "cleanup-state.json"
@@ -96,9 +97,7 @@ def setup_logger(loglevel: str, *, enable_file_handler: bool = False) -> None:
     )
     if enable_file_handler:
         CLEANUP_LOG.parent.mkdir(parents=True, exist_ok=True)
-        fh = logging.handlers.RotatingFileHandler(
-            CLEANUP_LOG, maxBytes=1_000_000, backupCount=3
-        )
+        fh = logging.handlers.RotatingFileHandler(CLEANUP_LOG, maxBytes=1_000_000, backupCount=3)
         fh.setLevel(level)
         fh.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
         cleanup_log.addHandler(fh)
@@ -108,19 +107,28 @@ def setup_logger(loglevel: str, *, enable_file_handler: bool = False) -> None:
 # Subprocess wrapper
 # ---------------------------------------------------------------------------
 
+
 def run(
-    cmd: list[str], *, check: bool = True, capture: bool = False,
+    cmd: list[str],
+    *,
+    check: bool = True,
+    capture: bool = False,
     cwd: Path | None = None,
 ) -> subprocess.CompletedProcess:
     """Thin wrapper over ``subprocess.run`` with text mode and consistent kwargs."""
     return subprocess.run(
-        cmd, check=check, text=True, capture_output=capture, cwd=cwd,
+        cmd,
+        check=check,
+        text=True,
+        capture_output=capture,
+        cwd=cwd,
     )
 
 
 # ---------------------------------------------------------------------------
 # Workspace discovery
 # ---------------------------------------------------------------------------
+
 
 def find_beads_dir(project_dir: Path | None = None) -> Path:
     """Return the active workspace's .beads/ directory.
@@ -147,6 +155,7 @@ def find_beads_dir(project_dir: Path | None = None) -> Path:
 # Interactive prompts
 # ---------------------------------------------------------------------------
 
+
 def is_interactive() -> bool:
     return sys.stdin.isatty() and sys.stdout.isatty()
 
@@ -166,6 +175,7 @@ def confirm(message: str, default: bool, *, yes: bool) -> bool:
 # ---------------------------------------------------------------------------
 # Activity tracking (for idle-stop)
 # ---------------------------------------------------------------------------
+
 
 def load_activity_state() -> dict:
     if not ACTIVITY_STATE.exists():
@@ -190,6 +200,7 @@ def record_activity(project_path: str) -> None:
 # ---------------------------------------------------------------------------
 # Project registry lookups (--project / --global)
 # ---------------------------------------------------------------------------
+
 
 def resolve_project_dir(slug_or_path: str) -> Path:
     """Resolve ``--project <name-or-path>`` to a project root via the registry.
@@ -224,14 +235,17 @@ def all_project_dirs() -> list[Path]:
 
     projects = load_registry_or_exit().beads_projects()
     if not projects:
-        sys.exit("bd-track: --global requires at least one beads project with a known path "
-                 "in the project registry")
+        sys.exit(
+            "bd-track: --global requires at least one beads project with a known path "
+            "in the project registry"
+        )
     return [p.path for p in projects]
 
 
 # ---------------------------------------------------------------------------
 # Datetime parsing
 # ---------------------------------------------------------------------------
+
 
 def parse_datetime(value: str) -> dt.datetime:
     """Parse a human-readable or ISO-8601 datetime string.
@@ -242,6 +256,7 @@ def parse_datetime(value: str) -> dt.datetime:
     """
     try:
         import dateparser as _dp
+
         result = _dp.parse(
             value,
             settings={"PREFER_DATES_FROM": "past", "RETURN_AS_TIMEZONE_AWARE": True},

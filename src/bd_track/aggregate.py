@@ -43,13 +43,13 @@ class Interval:
     interval: str
     bead: str | None = None
     session: str | None = None
-    start: str | None = None       # ISO-8601
-    stop: str | None = None        # ISO-8601; None => open
+    start: str | None = None  # ISO-8601
+    stop: str | None = None  # ISO-8601; None => open
     tags: list[str] = field(default_factory=list)
     group_id: str | None = None
     actor: str | None = None
     role: str | None = None
-    status: str = "open"           # open | closed | cancelled
+    status: str = "open"  # open | closed | cancelled
 
     @property
     def duration(self) -> dt.timedelta:
@@ -65,6 +65,7 @@ def _parse(ts: str) -> dt.datetime:
 # ---------------------------------------------------------------------------
 # Read + fold
 # ---------------------------------------------------------------------------
+
 
 def read_events(directory: Path | None = None) -> Iterator[dict]:
     """Yield events from every per-session JSONL file, skipping malformed lines.
@@ -90,8 +91,9 @@ def read_events(directory: Path | None = None) -> Iterator[dict]:
                 if isinstance(ev, dict) and ev.get("interval") and ev.get("event"):
                     yield ev
                 else:
-                    root_log.warning("skipping event missing interval/event at %s:%d",
-                                     path.name, lineno)
+                    root_log.warning(
+                        "skipping event missing interval/event at %s:%d", path.name, lineno
+                    )
 
 
 def fold_intervals(events: Iterable[dict]) -> dict[str, Interval]:
@@ -147,6 +149,7 @@ def load_intervals(directory: Path | None = None) -> list[Interval]:
 # Aggregation policy
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class Policy:
     """Per-axis partition|collapse classification.
@@ -169,8 +172,14 @@ class Policy:
 # Built-in policies (the `blh` "billing" rule plus the two endpoints).
 POLICIES = {
     # person-hours: a group's concurrent sessions collapse to wall-clock; actors sum.
-    "billing": Policy(axes={"group_id": "collapse", "session": "collapse",
-                            "actor": "partition", "role": "partition"}),
+    "billing": Policy(
+        axes={
+            "group_id": "collapse",
+            "session": "collapse",
+            "actor": "partition",
+            "role": "partition",
+        }
+    ),
     # compute-hours: every axis partitions → sum across sessions/groups/actors.
     "machine": Policy(axes={a: "partition" for a in POLICY_AXES}),
     # attended wall-clock: collapse everything → one big union.
@@ -216,12 +225,13 @@ def total_duration(intervals: Iterable[Interval], policy: Policy) -> dt.timedelt
 # Reporting
 # ---------------------------------------------------------------------------
 
+
 def _tag_value(iv: Interval, key: str) -> str | None:
     """Value of a flat 'key:value' billing tag (e.g. 'client'), or None."""
     prefix = f"{key}:"
     for tag in iv.tags:
         if tag.startswith(prefix):
-            return tag[len(prefix):]
+            return tag[len(prefix) :]
     return None
 
 
@@ -240,7 +250,10 @@ class ReportRow:
 
 
 def report(
-    intervals: Iterable[Interval], *, group_by: str, policy: Policy,
+    intervals: Iterable[Interval],
+    *,
+    group_by: str,
+    policy: Policy,
 ) -> list[ReportRow]:
     """Group closed intervals by an output dimension; total each under ``policy``.
 

@@ -36,9 +36,7 @@ def _last_activity(project_path: str, project_dir: Path) -> dt.datetime | None:
     ts_str = state.get(project_path)
     if ts_str:
         try:
-            candidates.append(
-                dt.datetime.fromisoformat(ts_str).replace(tzinfo=dt.timezone.utc)
-            )
+            candidates.append(dt.datetime.fromisoformat(ts_str).replace(tzinfo=dt.timezone.utc))
         except ValueError:
             pass
 
@@ -67,7 +65,9 @@ def _discover_running_dolt_servers() -> list[tuple[int, Path]]:
     try:
         result = subprocess.run(
             ["pgrep", "-af", "dolt sql-server"],
-            check=False, capture_output=True, text=True,
+            check=False,
+            capture_output=True,
+            text=True,
         )
     except FileNotFoundError:
         return []
@@ -139,14 +139,15 @@ def cmd_servers() -> None:
     # Pass 2: scan running dolt servers and report any unregistered ones.
     discovered = _discover_running_dolt_servers()
     unregistered = [
-        (pid, root) for pid, root in discovered
-        if str(root.resolve()) not in registered_paths
+        (pid, root) for pid, root in discovered if str(root.resolve()) not in registered_paths
     ]
     if unregistered:
         for pid, root in unregistered:
             root_log.info(
                 "%s  [unregistered, pid=%d] — register with: bd-track init-project --path %s",
-                root, pid, root,
+                root,
+                pid,
+                root,
             )
     elif not repos:
         root_log.info("No beads projects in the project registry and no running dolt servers found")
@@ -185,7 +186,8 @@ def cmd_server_stop(path: Path | None) -> None:
         else:
             root_log.error(
                 "%s  stop failed: %s",
-                proj_path, result.stderr.strip() or result.stdout.strip(),
+                proj_path,
+                result.stderr.strip() or result.stdout.strip(),
             )
 
 
@@ -235,7 +237,8 @@ def cmd_idle_stop(hours: float) -> None:
             else:
                 root_log.error(
                     "%s  stop failed: %s",
-                    path, result.stderr.strip() or result.stdout.strip(),
+                    path,
+                    result.stderr.strip() or result.stdout.strip(),
                 )
         else:
             root_log.info("%s  [idle %s — within threshold]", path, idle_hours_str)

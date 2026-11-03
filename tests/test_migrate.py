@@ -28,6 +28,7 @@ from bd_track.migrate import (
 # chezmoi guard
 # ---------------------------------------------------------------------------
 
+
 def test_is_managed_none_or_empty():
     assert _is_managed(Path("/x"), None) is False
     assert _is_managed(Path("/x"), set()) is False
@@ -52,25 +53,23 @@ def test_is_managed_dir_with_managed_descendant(tmp_path):
 # _plan_move
 # ---------------------------------------------------------------------------
 
+
 def test_plan_move_source_absent(tmp_path):
-    a = _plan_move(tmp_path / "old", tmp_path / "new", "dir",
-                   managed=None, check_chezmoi=True)
+    a = _plan_move(tmp_path / "old", tmp_path / "new", "dir", managed=None, check_chezmoi=True)
     assert a.do is False and "absent" in a.detail
 
 
 def test_plan_move_target_exists(tmp_path):
     (tmp_path / "old").mkdir()
     (tmp_path / "new").mkdir()
-    a = _plan_move(tmp_path / "old", tmp_path / "new", "dir",
-                   managed=None, check_chezmoi=True)
+    a = _plan_move(tmp_path / "old", tmp_path / "new", "dir", managed=None, check_chezmoi=True)
     assert a.do is False and "already exists" in a.detail
 
 
 def test_plan_move_chezmoi_managed_skipped(tmp_path):
     old = tmp_path / "old"
     old.mkdir()
-    a = _plan_move(old, tmp_path / "new", "dir",
-                   managed={old.resolve()}, check_chezmoi=True)
+    a = _plan_move(old, tmp_path / "new", "dir", managed={old.resolve()}, check_chezmoi=True)
     assert a.do is False and "chezmoi-managed" in a.detail
 
 
@@ -78,22 +77,21 @@ def test_plan_move_chezmoi_check_disabled(tmp_path):
     """Project-internal .beads artifacts skip the chezmoi check entirely."""
     old = tmp_path / "old"
     old.mkdir()
-    a = _plan_move(old, tmp_path / "new", "dir",
-                   managed={old.resolve()}, check_chezmoi=False)
+    a = _plan_move(old, tmp_path / "new", "dir", managed={old.resolve()}, check_chezmoi=False)
     assert a.do is True
 
 
 def test_plan_move_normal(tmp_path):
     old = tmp_path / "old"
     old.mkdir()
-    a = _plan_move(old, tmp_path / "new", "dir",
-                   managed=set(), check_chezmoi=True)
+    a = _plan_move(old, tmp_path / "new", "dir", managed=set(), check_chezmoi=True)
     assert a.do is True and a.dst == tmp_path / "new"
 
 
 # ---------------------------------------------------------------------------
 # _plan_env
 # ---------------------------------------------------------------------------
+
 
 def test_plan_env_no_file(tmp_path):
     assert _plan_env(tmp_path / ".envrc", managed=None) is None
@@ -122,6 +120,7 @@ def test_plan_env_managed_skipped(tmp_path):
 # ---------------------------------------------------------------------------
 # cmd_migrate_rename — end to end
 # ---------------------------------------------------------------------------
+
 
 def _make_project(root: Path, *, sidecar=True, sessions=True, envrc=True) -> None:
     beads = root / ".beads"
@@ -215,8 +214,7 @@ def test_chezmoi_managed_env_skipped(tmp_path, monkeypatch):
     proj = tmp_path / "proj"
     _make_project(proj, sidecar=False, sessions=False)
     # Mark the .envrc as chezmoi-managed.
-    monkeypatch.setattr(migrate, "_chezmoi_managed_set",
-                        lambda: {(proj / ".envrc").resolve()})
+    monkeypatch.setattr(migrate, "_chezmoi_managed_set", lambda: {(proj / ".envrc").resolve()})
 
     cmd_migrate_rename(project_dir=proj, apply=True)
 
@@ -244,13 +242,13 @@ def test_all_repos_sweeps_registry(tmp_path, monkeypatch):
 
 # Helpers ------------------------------------------------------------------
 
+
 def test_timew_ts_to_iso():
     assert _timew_ts_to_iso("20260419T021551Z") == "2026-04-19T02:15:51+00:00"
 
 
 def test_split_bead_tags_normal():
-    bead, tags = _split_bead_tags(
-        ["PROJ-dbo", "client:personal", "case:area:claude", "svc:none"])
+    bead, tags = _split_bead_tags(["PROJ-dbo", "client:personal", "case:area:claude", "svc:none"])
     assert bead == "PROJ-dbo"
     assert tags == ["client:personal", "case:area:claude", "svc:none"]
 
@@ -273,14 +271,21 @@ def test_import_key_stable_and_order_independent():
 
 _EXPORT = [
     # closed, bead-tagged → imported
-    {"id": 3, "start": "20260419T010000Z", "end": "20260419T020000Z",
-     "tags": ["bead-aaa", "client:acme", "case:x"]},
+    {
+        "id": 3,
+        "start": "20260419T010000Z",
+        "end": "20260419T020000Z",
+        "tags": ["bead-aaa", "client:acme", "case:x"],
+    },
     # closed, bead-tagged → imported (2h)
-    {"id": 2, "start": "20260420T000000Z", "end": "20260420T020000Z",
-     "tags": ["bead-bbb", "billable:false"]},
+    {
+        "id": 2,
+        "start": "20260420T000000Z",
+        "end": "20260420T020000Z",
+        "tags": ["bead-bbb", "billable:false"],
+    },
     # bead-less → skipped
-    {"id": 1, "start": "20260421T000000Z", "end": "20260421T003000Z",
-     "tags": ["billable:false"]},
+    {"id": 1, "start": "20260421T000000Z", "end": "20260421T003000Z", "tags": ["billable:false"]},
     # open (no end) → skipped
     {"id": 0, "start": "20260422T000000Z", "tags": ["bead-ccc"]},
 ]
@@ -306,6 +311,7 @@ def _read_import_log(proj) -> list[dict]:
 
 
 # Behaviour ----------------------------------------------------------------
+
 
 def test_import_dry_run_writes_nothing(tmp_path, capsys):
     proj = _make_beads(tmp_path)
@@ -357,4 +363,3 @@ def test_import_idempotent_rerun(tmp_path):
     second = len(_read_import_log(proj))
 
     assert first == second == 4  # 2 intervals x (start+stop); re-run added nothing
-

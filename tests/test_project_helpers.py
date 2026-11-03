@@ -211,11 +211,19 @@ def _cleanup(tmp_path: Path, beads: dict, host: dict, monkeypatch):
     (root / ".beads").mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(events, "LOG_FALLBACK_DIR", tmp_path / "share" / "bd-track")
     monkeypatch.setattr(events, "_LEGACY_FALLBACK_DIR", tmp_path / "share" / "bd-timew")
-    monkeypatch.setattr(registry, "load_host_config", lambda: {
-        "dolt_push": False, "dolt_remote_url": None, "dolt_push_timeout": 120,
-        "state_export": False, "state_repo": None,
-        "state_layout": "{project}/issues.jsonl", **host,
-    })
+    monkeypatch.setattr(
+        registry,
+        "load_host_config",
+        lambda: {
+            "dolt_push": False,
+            "dolt_remote_url": None,
+            "dolt_push_timeout": 120,
+            "state_export": False,
+            "state_repo": None,
+            "state_layout": "{project}/issues.jsonl",
+            **host,
+        },
+    )
     project.cmd_cleanup(7, project_dir=root, project=Project("amo", path=root, beads=beads))
 
 
@@ -223,8 +231,9 @@ def test_cleanup_exports_after_gc(tmp_path: Path, stub_bd, monkeypatch):
     calls, _ = stub_bd
     state = tmp_path / "state"
     state.mkdir()
-    _cleanup(tmp_path, {"prefix": "amo", "state_repo": True}, {"state_repo": str(state)},
-             monkeypatch)
+    _cleanup(
+        tmp_path, {"prefix": "amo", "state_repo": True}, {"state_repo": str(state)}, monkeypatch
+    )
     assert [c[:2] for c in calls] == [["bd", "compact"], ["bd", "gc"], ["bd", "export"]]
     assert "--include-memories" in calls[-1]
     assert (state / "amo" / "issues.jsonl").read_text() == '{"id": "amo-1"}\n'
@@ -239,8 +248,12 @@ def test_cleanup_export_off_by_default(tmp_path: Path, stub_bd, monkeypatch):
 
 def test_cleanup_export_missing_repo_is_skipped(tmp_path: Path, stub_bd, monkeypatch):
     calls, _ = stub_bd
-    _cleanup(tmp_path, {"prefix": "amo"},
-             {"state_export": "always", "state_repo": str(tmp_path / "nope")}, monkeypatch)
+    _cleanup(
+        tmp_path,
+        {"prefix": "amo"},
+        {"state_export": "always", "state_repo": str(tmp_path / "nope")},
+        monkeypatch,
+    )
     assert ["bd", "export"] not in [c[:2] for c in calls]
     assert not (tmp_path / "nope").exists()
 
@@ -251,8 +264,12 @@ def test_cleanup_export_failure_keeps_previous_file(tmp_path: Path, stub_bd, mon
     state = tmp_path / "state"
     (state / "amo").mkdir(parents=True)
     (state / "amo" / "issues.jsonl").write_text("previous\n")
-    _cleanup(tmp_path, {"prefix": "amo"},
-             {"state_export": "always", "state_repo": str(state)}, monkeypatch)
+    _cleanup(
+        tmp_path,
+        {"prefix": "amo"},
+        {"state_export": "always", "state_repo": str(state)},
+        monkeypatch,
+    )
     assert (state / "amo" / "issues.jsonl").read_text() == "previous\n"
     assert not list((state / "amo").glob(".*.tmp"))
 
@@ -269,13 +286,15 @@ def test_cleanup_pushes_after_export(tmp_path: Path, stub_bd, monkeypatch):
     calls, _ = stub_bd
     pushed = []
     monkeypatch.setattr(
-        doltpush, "push_project",
+        doltpush,
+        "push_project",
         lambda project, root, host, log, done: pushed.append((project.name, len(calls))),
     )
     state = tmp_path / "state"
     state.mkdir()
-    _cleanup(tmp_path, {"prefix": "amo", "state_repo": True}, {"state_repo": str(state)},
-             monkeypatch)
+    _cleanup(
+        tmp_path, {"prefix": "amo", "state_repo": True}, {"state_repo": str(state)}, monkeypatch
+    )
     assert pushed == [("amo", 3)]  # after compact, gc and export
 
 
@@ -293,9 +312,12 @@ def _sessions(tmp_path: Path) -> Path:
 def _export_on(tmp_path: Path, stub_bd, monkeypatch, layout="{project}/issues.jsonl") -> Path:
     state = tmp_path / "state"
     state.mkdir(exist_ok=True)
-    _cleanup(tmp_path, {"prefix": "amo"},
-             {"state_export": "always", "state_repo": str(state), "state_layout": layout},
-             monkeypatch)
+    _cleanup(
+        tmp_path,
+        {"prefix": "amo"},
+        {"state_export": "always", "state_repo": str(state), "state_layout": layout},
+        monkeypatch,
+    )
     return state
 
 

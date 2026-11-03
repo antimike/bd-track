@@ -84,9 +84,16 @@ def test_normalize_remote_keeps_full_path(remote: str, key: str):
 
 @pytest.mark.parametrize(
     "remote, shorthand",
-    [("antimike/bd-track", True), ("a.b/c_d", True), ("git@github.com:o/r", False),
-     ("https://github.com/o/r", False), ("/srv/o", False), ("./o/r", False),
-     ("o/r/s", False), (".o/r", False)],
+    [
+        ("antimike/bd-track", True),
+        ("a.b/c_d", True),
+        ("git@github.com:o/r", False),
+        ("https://github.com/o/r", False),
+        ("/srv/o", False),
+        ("./o/r", False),
+        ("o/r/s", False),
+        (".o/r", False),
+    ],
 )
 def test_is_shorthand(remote: str, shorthand: bool):
     assert registry.is_shorthand(remote) is shorthand
@@ -159,7 +166,6 @@ def test_new_schema(home: Path):
     assert reg.by_path(Path("~/src/amo")) is amo
 
 
-
 def test_full_url_remotes_match_by_path(home: Path, tmp_path: Path, caplog):
     nested = _clone(tmp_path / "src" / "repo", "git@gl-alias:group/sub/repo.git")  # ssh alias
     other = _clone(tmp_path / "src" / "other", "git@gitlab.com:sub/repo.git")
@@ -176,6 +182,7 @@ def test_full_url_remotes_match_by_path(home: Path, tmp_path: Path, caplog):
     junk = reg.get("junk")
     assert (junk.remote, junk.remote_spec) == (None, None)
     assert "not a git URL or owner/repo" in caplog.text
+
 
 def test_legacy_schema(home: Path, tmp_path: Path):
     clone = _clone(tmp_path / "src" / "amontillado", "git@github.com:antimike/amontillado.git")
@@ -381,8 +388,12 @@ def test_dolt_push_yaml12_no_is_rejected_end_to_end(home: Path):
 
 
 def _host(**over) -> dict:
-    return {"state_export": False, "state_repo": None,
-            "state_layout": "{project}/issues.jsonl", **over}
+    return {
+        "state_export": False,
+        "state_repo": None,
+        "state_layout": "{project}/issues.jsonl",
+        **over,
+    }
 
 
 def test_state_export_target(tmp_path: Path):
@@ -396,12 +407,16 @@ def test_state_export_target(tmp_path: Path):
 
     assert state_export_target(plain, host) is None  # default false, no override
     assert state_export_target(on, host) == (
-        tmp_path / "state", tmp_path / "state" / "amo" / "issues.jsonl"
+        tmp_path / "state",
+        tmp_path / "state" / "amo" / "issues.jsonl",
     )
     assert state_export_target(elsewhere, host) == (work, work / "client" / "issues.jsonl")
     assert state_export_target(on, {**host, "state_export": "never"}) is None
-    d71 = {**host, "state_export": "always",
-           "state_layout": "projects/{project}/beads/issues.jsonl"}
+    d71 = {
+        **host,
+        "state_export": "always",
+        "state_layout": "projects/{project}/beads/issues.jsonl",
+    }
     assert state_export_target(plain, d71)[1] == (
         tmp_path / "state" / "projects" / "amo" / "beads" / "issues.jsonl"
     )
@@ -836,10 +851,25 @@ def test_state_sessions_dir(tmp_path: Path):
 @pytest.mark.parametrize(
     "name, ok",
     [
-        ("laptop", True), ("wsl-box_2", True), ("a.b", True),
-        ("", False), ("a/b", False), (".hidden", False), ("x.lock", False), ("end.", False),
-        ("a..b", False), ("sp ace", False), ("a:b", False), ("@", False), ("a@{b", False),
-        ("a~1", False), ("a^", False), ("a*", False), ("a[b", False), ("a\\b", False), (3, False),
+        ("laptop", True),
+        ("wsl-box_2", True),
+        ("a.b", True),
+        ("", False),
+        ("a/b", False),
+        (".hidden", False),
+        ("x.lock", False),
+        ("end.", False),
+        ("a..b", False),
+        ("sp ace", False),
+        ("a:b", False),
+        ("@", False),
+        ("a@{b", False),
+        ("a~1", False),
+        ("a^", False),
+        ("a*", False),
+        ("a[b", False),
+        ("a\\b", False),
+        (3, False),
     ],
 )
 def test_is_ref_component(name, ok):

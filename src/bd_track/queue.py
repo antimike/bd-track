@@ -102,6 +102,7 @@ def save_all_queues(beads_dir: Path, data: dict[str, list[str]]) -> None:
 # Core queue actions (push/unshift/pop/peek/list/remove/clear)
 # ---------------------------------------------------------------------------
 
+
 def cmd_queue(
     action: str,
     *,
@@ -226,6 +227,7 @@ def cmd_queue(
 # clean — mechanical sweep of stale entries (closed/deferred beads)
 # ---------------------------------------------------------------------------
 
+
 def cmd_clean(
     *,
     scope_arg: str | None = None,
@@ -250,9 +252,7 @@ def cmd_clean(
             root_log.info("All queues are empty")
         return 0
 
-    target_scopes = (
-        [resolve_scope(scope_arg)] if explicit_scope else list(all_queues.keys())
-    )
+    target_scopes = [resolve_scope(scope_arg)] if explicit_scope else list(all_queues.keys())
 
     removed_total = 0
     for scope in target_scopes:
@@ -287,6 +287,7 @@ def cmd_clean(
 # ---------------------------------------------------------------------------
 # generate — build a queue from search/filter criteria
 # ---------------------------------------------------------------------------
+
 
 def _bd_list(
     *,
@@ -366,8 +367,9 @@ def cmd_generate(
         existing.extend(added)
         all_queues[scope] = existing
         save_all_queues(beads_dir, all_queues)
-        root_log.info("[%s] Appended %d new bead(s); queue length is now %d",
-                      scope, len(added), len(existing))
+        root_log.info(
+            "[%s] Appended %d new bead(s); queue length is now %d", scope, len(added), len(existing)
+        )
         return
 
     # Replace mode
@@ -379,7 +381,8 @@ def cmd_generate(
             )
         if not confirm(
             f"Replace {len(existing)} existing entries in '{scope}' with {len(matched)} new?",
-            default=False, yes=False,
+            default=False,
+            yes=False,
         ):
             root_log.info("Aborted; queue '%s' unchanged", scope)
             return
@@ -398,7 +401,7 @@ def cmd_generate(
 _SCOPE_HEURISTICS = {
     "tooling": {"requires_label": "scope:local"},
     "pipeline": {"forbids_label": "scope:local"},
-    "portal":   {"forbids_label": "scope:local"},
+    "portal": {"forbids_label": "scope:local"},
     "snowflake": {"forbids_label": "scope:local"},
 }
 
@@ -467,14 +470,15 @@ def _proposals_for_queue(
                 )
             elif dep_id not in pos:
                 # Skip if the dependency lives in another known queue.
-                already_elsewhere = any(
-                    dep_id in q for s, q in other_queues.items() if s != scope
-                )
+                already_elsewhere = any(dep_id in q for s, q in other_queues.items() if s != scope)
                 if already_elsewhere:
                     continue
                 proposals.append(
-                    ("add-before", dep_id,
-                     f"required by {bid} (status={dep_status}) but missing from any queue"),
+                    (
+                        "add-before",
+                        dep_id,
+                        f"required by {bid} (status={dep_status}) but missing from any queue",
+                    ),
                 )
 
     # Deduplicate while preserving order.
@@ -511,7 +515,8 @@ def _apply_proposals(
     if deferred:
         root_log.info(
             "[%s] %d non-destructive recommendation(s) need manual action:",
-            scope, len(deferred),
+            scope,
+            len(deferred),
         )
         for action, bid, reason in deferred:
             root_log.info("  • [%s] %s — %s", action, bid, reason)
@@ -537,9 +542,7 @@ def cmd_prune(
         root_log.info("All queues are empty")
         return
 
-    target_scopes = (
-        [resolve_scope(scope_arg)] if explicit_scope else list(all_queues.keys())
-    )
+    target_scopes = [resolve_scope(scope_arg)] if explicit_scope else list(all_queues.keys())
 
     any_proposals = False
     for scope in target_scopes:
@@ -547,7 +550,8 @@ def cmd_prune(
         if not queue:
             continue
         proposals = _proposals_for_queue(
-            scope, queue,
+            scope,
+            queue,
             other_queues={s: q for s, q in all_queues.items() if s != scope},
         )
         if not proposals:
@@ -564,7 +568,8 @@ def cmd_prune(
             continue
         if not is_interactive():
             root_log.warning(
-                "[%s] non-interactive and --yes not set; reporting only", scope,
+                "[%s] non-interactive and --yes not set; reporting only",
+                scope,
             )
             continue
         if confirm(f"Apply destructive changes for '{scope}'?", default=False, yes=False):

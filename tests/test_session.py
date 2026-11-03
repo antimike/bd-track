@@ -35,6 +35,7 @@ PROJECT = Path("/home/u/proj")
 # Resolution precedence
 # ---------------------------------------------------------------------------
 
+
 def test_explicit_flag_wins(isolated, monkeypatch):
     monkeypatch.setenv(session.ENV_SESSION, "from-env")
     monkeypatch.setenv(session.ENV_CLAUDE_SESSION, "from-claude")
@@ -66,6 +67,7 @@ def test_injected_id_does_not_write_pointer(isolated, monkeypatch):
 # ---------------------------------------------------------------------------
 # Pointer continuity + generation
 # ---------------------------------------------------------------------------
+
 
 def test_generates_and_persists_pointer(isolated, monkeypatch):
     monkeypatch.setattr(session, "_generate_session_id", lambda taken: "blue.cat.tree")
@@ -125,6 +127,7 @@ def test_generate_receives_active_ids_as_taken(isolated, monkeypatch):
 # Pure helpers
 # ---------------------------------------------------------------------------
 
+
 def test_is_fresh_boundaries():
     now = session._now()
     assert session._is_fresh({"last_seen": now.isoformat()}, now)
@@ -154,6 +157,7 @@ def test_corrupt_pointer_resets_cleanly(isolated, monkeypatch):
 # ---------------------------------------------------------------------------
 # Generation guard
 # ---------------------------------------------------------------------------
+
 
 def test_generate_avoids_active_collision(monkeypatch):
     xp = pytest.importorskip("xkcdpass.xkcd_password")

@@ -88,8 +88,7 @@ def log_dir(project_dir: Path | None = None) -> Path:
         return path_compat(bd / "bd-track" / "sessions", bd / "bd-timew" / "sessions")
     root = Path(project_dir) if project_dir else Path.cwd()
     pid = project_id(root)
-    return path_compat(LOG_FALLBACK_DIR / pid / "sessions",
-                       _LEGACY_FALLBACK_DIR / pid / "sessions")
+    return path_compat(LOG_FALLBACK_DIR / pid / "sessions", _LEGACY_FALLBACK_DIR / pid / "sessions")
 
 
 def log_dirs(project_root: Path, beads_dir: Path | None = None) -> list[Path]:
@@ -118,7 +117,9 @@ def append_event(event: dict, *, session_id: str, project_dir: Path | None = Non
     if len(data) >= PIPE_BUF:
         root_log.warning(
             "bd-track event line is %d bytes (>= PIPE_BUF %d); append atomicity is "
-            "not guaranteed under concurrent same-file writers", len(data), PIPE_BUF,
+            "not guaranteed under concurrent same-file writers",
+            len(data),
+            PIPE_BUF,
         )
     path = _session_log_path(session_id, project_dir)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -141,27 +142,34 @@ def _base_event(event_type: str, interval: str, session_id: str) -> dict:
 
 
 def start_interval(
-    bead: str, tags: Iterable[str], *, session_id: str,
-    group_id: str | None = None, actor: str | None = None, role: str | None = None,
+    bead: str,
+    tags: Iterable[str],
+    *,
+    session_id: str,
+    group_id: str | None = None,
+    actor: str | None = None,
+    role: str | None = None,
     project_dir: Path | None = None,
 ) -> str:
     """Append a ``start`` event and return the new interval id (ULID)."""
     interval = str(ULID())
     event = _base_event("start", interval, session_id)
-    event.update({
-        "bead": bead,
-        "tags": list(tags),
-        "group_id": group_id,
-        "actor": actor,
-        "role": role,
-    })
+    event.update(
+        {
+            "bead": bead,
+            "tags": list(tags),
+            "group_id": group_id,
+            "actor": actor,
+            "role": role,
+        }
+    )
     append_event(event, session_id=session_id, project_dir=project_dir)
     return interval
 
 
-def stop_interval(interval: str, *, session_id: str,
-                  ts: str | None = None,
-                  project_dir: Path | None = None) -> None:
+def stop_interval(
+    interval: str, *, session_id: str, ts: str | None = None, project_dir: Path | None = None
+) -> None:
     """Append a ``stop`` event for ``interval`` (closes it on aggregation).
 
     ``ts`` overrides the default now() timestamp — used by ``stop --at``.
@@ -174,15 +182,21 @@ def stop_interval(interval: str, *, session_id: str,
 
 def cancel_interval(interval: str, *, session_id: str, project_dir: Path | None = None) -> None:
     """Append a ``cancel`` event for ``interval`` (drops it on aggregation)."""
-    append_event(_base_event("cancel", interval, session_id),
-                 session_id=session_id, project_dir=project_dir)
+    append_event(
+        _base_event("cancel", interval, session_id), session_id=session_id, project_dir=project_dir
+    )
 
 
 def correct_interval(
-    interval: str, *, session_id: str,
-    start: str | None = None, stop: str | None = None,
+    interval: str,
+    *,
+    session_id: str,
+    start: str | None = None,
+    stop: str | None = None,
     tags: Iterable[str] | None = None,
-    group_id: object = _UNSET, actor: object = _UNSET, role: object = _UNSET,
+    group_id: object = _UNSET,
+    actor: object = _UNSET,
+    role: object = _UNSET,
     project_dir: Path | None = None,
 ) -> None:
     """Append a ``correction`` event carrying any subset of mutable fields.
@@ -216,7 +230,10 @@ def _infer_actor() -> str:
 
 
 def resolve_provenance(
-    *, group_id: str | None = None, actor: str | None = None, role: str | None = None,
+    *,
+    group_id: str | None = None,
+    actor: str | None = None,
+    role: str | None = None,
 ) -> dict:
     """Source provenance: explicit arg → env → (actor only) inference; else null."""
     return {

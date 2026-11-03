@@ -44,10 +44,15 @@ def _is_ulid(s: str) -> bool:
 # start / stop / cancel
 # ---------------------------------------------------------------------------
 
+
 def test_start_event_shape_and_returns_interval(beads, session_log):
     interval = events.start_interval(
-        "bd-timew-ahp", ["client:X", "case:Y", "svc:Z"],
-        session_id=SESSION, group_id=None, actor="claude", role=None,
+        "bd-timew-ahp",
+        ["client:X", "case:Y", "svc:Z"],
+        session_id=SESSION,
+        group_id=None,
+        actor="claude",
+        role=None,
     )
     assert _is_ulid(interval)
     [ev] = _read_lines(session_log)
@@ -90,10 +95,12 @@ def test_appends_accumulate(beads, session_log):
 # correction
 # ---------------------------------------------------------------------------
 
+
 def test_correction_subset_of_fields(beads, session_log):
     interval = events.start_interval("b", [], session_id=SESSION)
-    events.correct_interval(interval, session_id=SESSION,
-                            start="2026-06-02T09:00:00-05:00", tags=["case:NEW"])
+    events.correct_interval(
+        interval, session_id=SESSION, start="2026-06-02T09:00:00-05:00", tags=["case:NEW"]
+    )
     corr = _read_lines(session_log)[-1]
     assert corr["event"] == "correction" and corr["interval"] == interval
     assert corr["start"] == "2026-06-02T09:00:00-05:00"
@@ -118,6 +125,7 @@ def test_correction_requires_a_change(beads):
 # log_dir resolution
 # ---------------------------------------------------------------------------
 
+
 def test_log_dir_uses_beads_dir_when_present(beads):
     assert events.log_dir() == beads / "bd-track" / "sessions"
 
@@ -138,6 +146,7 @@ def test_log_dir_falls_back_when_no_beads_dir(monkeypatch, tmp_path):
 # provenance + guards
 # ---------------------------------------------------------------------------
 
+
 def test_resolve_provenance_infers_actor(monkeypatch):
     monkeypatch.delenv("BD_TRACK_GROUP_ID", raising=False)
     monkeypatch.delenv("BD_TRACK_ACTOR", raising=False)
@@ -151,17 +160,21 @@ def test_resolve_provenance_infers_actor(monkeypatch):
 def test_resolve_provenance_precedence(monkeypatch):
     monkeypatch.setenv("BD_TRACK_ACTOR", "env-actor")
     monkeypatch.setenv("BD_TRACK_GROUP_ID", "env-group")
-    assert events.resolve_provenance(actor="explicit")["actor"] == "explicit"   # arg beats env
-    assert events.resolve_provenance()["group_id"] == "env-group"               # env beats default
+    assert events.resolve_provenance(actor="explicit")["actor"] == "explicit"  # arg beats env
+    assert events.resolve_provenance()["group_id"] == "env-group"  # env beats default
 
 
 def test_normal_event_well_under_pipe_buf(beads):
     sid = "3a0f7512-da05-42c3-a540-90390f5fbbd6"  # realistic Claude UUID session
     events.start_interval(
         "bd-timew-ahp",
-        ["client:PRJ001125 BOCO : BOCO : BOCO : BOCO AI Innovation",
-         "case:01_AI Innovation (Project Task)", "svc:Technology Services"],
-        session_id=sid, actor="claude",
+        [
+            "client:PRJ001125 BOCO : BOCO : BOCO : BOCO AI Innovation",
+            "case:01_AI Innovation (Project Task)",
+            "svc:Technology Services",
+        ],
+        session_id=sid,
+        actor="claude",
     )
     line = events._session_log_path(sid).read_bytes()
     assert len(line) < events.PIPE_BUF

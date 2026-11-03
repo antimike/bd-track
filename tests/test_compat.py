@@ -14,6 +14,7 @@ from bd_track.util import env_compat, path_compat
 # env_compat
 # ---------------------------------------------------------------------------
 
+
 def test_env_compat_prefers_new_name(monkeypatch):
     monkeypatch.setenv("BD_TRACK_SCOPE", "new")
     monkeypatch.setenv("BD_TIMEW_SCOPE", "old")
@@ -35,6 +36,7 @@ def test_env_compat_default_when_neither(monkeypatch):
 # ---------------------------------------------------------------------------
 # path_compat
 # ---------------------------------------------------------------------------
+
 
 def test_path_compat_prefers_new(tmp_path):
     new = tmp_path / "bd-track"
@@ -60,6 +62,7 @@ def test_path_compat_defaults_to_new_when_neither(tmp_path):
 # ---------------------------------------------------------------------------
 # sidecar fallback (the live-project case)
 # ---------------------------------------------------------------------------
+
 
 def test_sidecar_reads_legacy_bd_timew_yaml(tmp_path):
     bdir = tmp_path / ".beads"

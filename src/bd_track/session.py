@@ -38,8 +38,9 @@ from bd_track.util import env_compat, find_beads_dir, path_compat
 # Operational state — XDG_STATE_HOME, not ~/.cache: the pointer is regenerable
 # but not throwaway mid-session. Never synced (see the operational/authoritative
 # split in docs/dev/timetracking-architecture.06022026.md).
-SESSION_STATE_DIR = path_compat(Path.home() / ".local" / "state" / "bd-track",
-                                Path.home() / ".local" / "state" / "bd-timew")
+SESSION_STATE_DIR = path_compat(
+    Path.home() / ".local" / "state" / "bd-track", Path.home() / ".local" / "state" / "bd-timew"
+)
 POINTER_NAME = "current-session.json"
 
 # A pointer entry unused for longer than this is treated as a finished session;
@@ -145,7 +146,9 @@ def _generate_session_id(taken: set[str]) -> str:
 
 
 def resolve_session_id(
-    project_root: Path | None = None, *, explicit: str | None = None,
+    project_root: Path | None = None,
+    *,
+    explicit: str | None = None,
 ) -> str:
     """Resolve the session id for this invocation (see module docstring for precedence)."""
     if explicit:
@@ -176,7 +179,9 @@ def resolve_session_id(
 
 
 def cmd_session_current(
-    project_dir: Path | None = None, *, explicit: str | None = None,
+    project_dir: Path | None = None,
+    *,
+    explicit: str | None = None,
 ) -> None:
     """Print the resolved session id for this invocation context (machine-readable)."""
     project_root = find_beads_dir(project_dir).parent if project_dir else None

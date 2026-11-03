@@ -27,15 +27,17 @@ def proj(monkeypatch, tmp_path):
     monkeypatch.setattr(events, "find_beads_dir", lambda project_dir=None: bdir)
     # Billing + side effects: keep the command pure for the test.
     monkeypatch.setattr(track, "load_sidecar", lambda beads_dir: {"default": {}, "patterns": []})
-    monkeypatch.setattr(track, "resolve_tuple",
-                        lambda labels, sidecar: {"client": "X", "case": "Y", "svc": "Z"})
+    monkeypatch.setattr(
+        track, "resolve_tuple", lambda labels, sidecar: {"client": "X", "case": "Y", "svc": "Z"}
+    )
     monkeypatch.setattr(track, "record_activity", lambda *a, **k: None)
     return bdir
 
 
 def _issue(monkeypatch, *, status="open", title="t"):
     monkeypatch.setattr(
-        track, "get_issue",
+        track,
+        "get_issue",
         lambda iid: {"id": iid, "title": title, "labels": [], "status": status},
     )
 
@@ -59,6 +61,7 @@ def _open(bdir, session=None):
 # ---------------------------------------------------------------------------
 # start
 # ---------------------------------------------------------------------------
+
 
 def test_start_appends_start_event_with_tags_and_claims(proj, monkeypatch):
     _issue(monkeypatch, status="open")
@@ -103,8 +106,9 @@ def test_start_does_not_touch_other_session(proj, monkeypatch):
 def test_start_records_billable_false_when_no_svc(proj, monkeypatch):
     _issue(monkeypatch)
     _claims(monkeypatch)
-    monkeypatch.setattr(track, "resolve_tuple",
-                        lambda labels, sidecar: {"client": "X", "case": "Y", "svc": None})
+    monkeypatch.setattr(
+        track, "resolve_tuple", lambda labels, sidecar: {"client": "X", "case": "Y", "svc": None}
+    )
     track.cmd_start("bead-1", session_id="s1")
     assert "billable:false" in _open(proj, "s1")[0].tags
 
@@ -112,6 +116,7 @@ def test_start_records_billable_false_when_no_svc(proj, monkeypatch):
 # ---------------------------------------------------------------------------
 # stop
 # ---------------------------------------------------------------------------
+
 
 def test_stop_closes_own_open_interval(proj, monkeypatch):
     _issue(monkeypatch)
@@ -169,6 +174,7 @@ def test_stop_no_active_is_quiet_noop(proj, monkeypatch):
 # switch
 # ---------------------------------------------------------------------------
 
+
 def test_switch_stops_then_starts(proj, monkeypatch):
     _issue(monkeypatch)
     _claims(monkeypatch)
@@ -185,12 +191,14 @@ def test_switch_stops_then_starts(proj, monkeypatch):
 # active / report (smoke — output via logging, assert no crash + state)
 # ---------------------------------------------------------------------------
 
+
 def test_active_lists_all_sessions(proj, monkeypatch, caplog):
     _issue(monkeypatch)
     _claims(monkeypatch)
     track.cmd_start("bead-A", session_id="s1")
     track.cmd_start("bead-B", session_id="s2")
     import logging
+
     with caplog.at_level(logging.INFO, logger="bd-track"):
         track.cmd_active(session_id="s1")
     text = caplog.text
@@ -203,6 +211,7 @@ def test_report_totals_closed_intervals(proj, monkeypatch, caplog):
     track.cmd_start("bead-1", session_id="s1")
     track.cmd_stop(clean=False, session_id="s1")
     import logging
+
     with caplog.at_level(logging.INFO, logger="bd-track"):
         track.cmd_report(group_by="bead", policy_name="billing", session_id="s1")
     assert "bead-1" in caplog.text and "TOTAL" in caplog.text

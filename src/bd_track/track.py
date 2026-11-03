@@ -47,6 +47,7 @@ _TUPLE_KEYS = ("client", "case", "svc")
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def _build_tags(tuple_: dict) -> list[str]:
     """Flat billing tags from a resolved tuple (``key:value`` + billable flag)."""
     tags = [f"{key}:{val}" for key in _TUPLE_KEYS if (val := tuple_.get(key))]
@@ -61,7 +62,7 @@ def _tuple_from_tags(tags: list[str]) -> dict[str, str | None]:
     for tag in tags:
         for key in _TUPLE_KEYS:
             if tag.startswith(f"{key}:"):
-                out[key] = tag[len(f"{key}:"):]
+                out[key] = tag[len(f"{key}:") :]
     return out
 
 
@@ -87,16 +88,21 @@ def _project_roots(project_dir: Path | None, global_scope: bool) -> list[Path]:
     """Resolve the set of project roots implied by scope flags."""
     if global_scope:
         from bd_track.util import all_project_dirs
+
         return all_project_dirs()
     return [_project_root(project_dir)]
 
 
 def _session_open(
-    session_id: str, project_root: Path, *, bead: str | None = None,
+    session_id: str,
+    project_root: Path,
+    *,
+    bead: str | None = None,
 ) -> list[Interval]:
     """Open intervals belonging to ``session_id`` (optionally for one bead)."""
     opens = [
-        iv for iv in open_intervals(load_intervals(log_dir(project_root)))
+        iv
+        for iv in open_intervals(load_intervals(log_dir(project_root)))
         if iv.session == session_id
     ]
     if bead:
@@ -107,6 +113,7 @@ def _session_open(
 # ---------------------------------------------------------------------------
 # start / stop / switch
 # ---------------------------------------------------------------------------
+
 
 def cmd_start(issue_id: str, *, dry_run: bool = False, session_id: str | None = None) -> None:
     """Resolve the billing tuple, claim the bead, append a ``start`` event."""
@@ -135,19 +142,29 @@ def cmd_start(issue_id: str, *, dry_run: bool = False, session_id: str | None = 
     tags = _build_tags(tuple_)
     provenance = resolve_provenance()
     interval = start_interval(
-        issue_id, tags, session_id=sid, project_dir=project_root, **provenance,
+        issue_id,
+        tags,
+        session_id=sid,
+        project_dir=project_root,
+        **provenance,
     )
     root_log.info("Started interval %s  [session %s]", interval[:8], sid)
 
     if issue.get("status") != "in_progress":
         from bd_track.util import run
+
         run(["bd", "update", issue_id, "--claim"], check=False)
 
     record_activity(str(project_root.resolve()))
 
 
-def cmd_stop(issue_id: str | None = None, *, clean: bool = True,
-             session_id: str | None = None, at: str | None = None) -> None:
+def cmd_stop(
+    issue_id: str | None = None,
+    *,
+    clean: bool = True,
+    session_id: str | None = None,
+    at: str | None = None,
+) -> None:
     """Append a ``stop`` event for this session's open interval(s).
 
     With ``issue_id`` given, stops only the interval(s) tagged with that bead.
@@ -167,6 +184,7 @@ def cmd_stop(issue_id: str | None = None, *, clean: bool = True,
     at_dt: dt.datetime | None = None
     if at is not None:
         from bd_track.util import parse_datetime
+
         try:
             at_dt = parse_datetime(at)
         except ValueError as exc:
@@ -186,7 +204,8 @@ def cmd_stop(issue_id: str | None = None, *, clean: bool = True,
             if at_dt < start_dt:
                 root_log.error(
                     "--at %s is before interval start %s",
-                    at_dt.isoformat(), iv.start,
+                    at_dt.isoformat(),
+                    iv.start,
                 )
                 sys.exit(1)
         ts = at_dt.isoformat(timespec="seconds") if at_dt is not None else None
@@ -195,19 +214,20 @@ def cmd_stop(issue_id: str | None = None, *, clean: bool = True,
             elapsed = _format_duration(at_dt - dt.datetime.fromisoformat(iv.start))
         else:
             elapsed = _elapsed(iv.start)
-        root_log.info("Stopped %s  %s  (%s)", iv.bead or "(no bead)",
-                      iv.interval[:8], elapsed)
+        root_log.info("Stopped %s  %s  (%s)", iv.bead or "(no bead)", iv.interval[:8], elapsed)
 
     if clean:
         from bd_track.queue import STOP_SWEEP_STATUSES, cmd_clean
+
         try:
             cmd_clean(quiet=True, statuses=STOP_SWEEP_STATUSES)
         except SystemExit:
             pass
 
 
-def cmd_switch(issue_id: str, *, from_issue_id: str | None = None,
-               session_id: str | None = None) -> None:
+def cmd_switch(
+    issue_id: str, *, from_issue_id: str | None = None, session_id: str | None = None
+) -> None:
     """Stop the current interval and start one on ``issue_id`` (composition)."""
     cmd_stop(from_issue_id, clean=False, session_id=session_id)
     cmd_start(issue_id, session_id=session_id)
@@ -216,6 +236,7 @@ def cmd_switch(issue_id: str, *, from_issue_id: str | None = None,
 # ---------------------------------------------------------------------------
 # show
 # ---------------------------------------------------------------------------
+
 
 def _find_interval(interval_id: str, roots: list[Path]) -> tuple[str, Interval]:
     """Locate an interval by full ULID or unique prefix across project roots."""
@@ -266,32 +287,38 @@ def cmd_show(
 
     if fmt == "json":
         import json
+
         indent = 2 if pretty else None
         print(json.dumps(data, indent=indent, ensure_ascii=False))
         return
 
     if fmt == "yaml":
         import yaml
+
         print(yaml.dump(data, default_flow_style=False, allow_unicode=True), end="")
         return
 
     if fmt in ("csv", "tsv"):
         import csv
         import io
+
         sep = "\t" if fmt == "tsv" else ","
         buf = io.StringIO()
         w = csv.writer(buf, delimiter=sep)
         w.writerow(data.keys())
-        w.writerow([
-            "|".join(v) if isinstance(v, list) else ("" if v is None else str(v))
-            for v in data.values()
-        ])
+        w.writerow(
+            [
+                "|".join(v) if isinstance(v, list) else ("" if v is None else str(v))
+                for v in data.values()
+            ]
+        )
         print(buf.getvalue(), end="")
         return
 
     # table (default) — Rich
     from rich.console import Console
     from rich.table import Table
+
     console = Console()
     table = Table(show_header=False, box=None, padding=(0, 1))
     table.add_column("Field", style="bold")
@@ -308,6 +335,7 @@ def cmd_show(
 # ---------------------------------------------------------------------------
 # cancel
 # ---------------------------------------------------------------------------
+
 
 def cmd_cancel(
     interval_id: str,
@@ -350,13 +378,13 @@ def cmd_cancel(
 
     sid = resolve_session_id(project_root, explicit=session_id)
     cancel_interval(resolved_id, session_id=sid, project_dir=project_root)
-    root_log.info("Cancelled interval %s%s", resolved_id[:8],
-                  f" ({iv.bead})" if iv.bead else "")
+    root_log.info("Cancelled interval %s%s", resolved_id[:8], f" ({iv.bead})" if iv.bead else "")
 
 
 # ---------------------------------------------------------------------------
 # amend
 # ---------------------------------------------------------------------------
+
 
 def cmd_amend(
     interval_id: str,
@@ -397,8 +425,9 @@ def cmd_amend(
     resolved_id, iv = next(iter(matches.items()))
 
     if iv.status == "cancelled":
-        root_log.error("interval %s is cancelled; cannot amend a cancelled interval",
-                       resolved_id[:8])
+        root_log.error(
+            "interval %s is cancelled; cannot amend a cancelled interval", resolved_id[:8]
+        )
         sys.exit(1)
 
     # Parse timestamps.
@@ -436,7 +465,7 @@ def cmd_amend(
     elif incremental:
         add_from_ops: list[str] = []
         rem_from_ops: list[str] = []
-        for op in (tag_ops or []):
+        for op in tag_ops or []:
             if op.startswith("+"):
                 add_from_ops.append(op[1:])
             elif op.startswith("~"):
@@ -448,14 +477,21 @@ def cmd_amend(
         all_removes = set(remove_tags or []) | set(rem_from_ops)
         for t in all_removes:
             if t not in iv.tags:
-                root_log.warning("--remove-tag / ~prefix: tag %r not present on interval %s",
-                                 t, resolved_id[:8])
+                root_log.warning(
+                    "--remove-tag / ~prefix: tag %r not present on interval %s", t, resolved_id[:8]
+                )
         current = (set(iv.tags) - all_removes) | all_adds
         new_tags = sorted(current)
 
     # Nothing to change?
-    if (start_iso is None and stop_iso is None and new_tags is None
-            and actor is None and role is None and group_id is None):
+    if (
+        start_iso is None
+        and stop_iso is None
+        and new_tags is None
+        and actor is None
+        and role is None
+        and group_id is None
+    ):
         root_log.error(
             "amend: nothing to change — specify at least one of "
             "--start, --stop, --tags, --add-tag, --remove-tag, --tag, "
@@ -494,6 +530,7 @@ def cmd_amend(
 # ---------------------------------------------------------------------------
 # list
 # ---------------------------------------------------------------------------
+
 
 def _fmt_ts(ts: str | None) -> str:
     """Short timestamp for table display: drop sub-second and timezone noise."""
@@ -595,34 +632,40 @@ def cmd_list(
 
     if fmt == "json":
         import json
+
         indent = 2 if pretty else None
         print(json.dumps(rows, indent=indent, ensure_ascii=False))
         return
 
     if fmt == "yaml":
         import yaml
+
         print(yaml.dump(rows, default_flow_style=False, allow_unicode=True), end="")
         return
 
     if fmt in ("csv", "tsv"):
         import csv
         import io
+
         sep = "\t" if fmt == "tsv" else ","
         buf = io.StringIO()
         w = csv.writer(buf, delimiter=sep)
         if rows:
             w.writerow(rows[0].keys())
         for row in rows:
-            w.writerow([
-                "|".join(v) if isinstance(v, list) else ("" if v is None else str(v))
-                for v in row.values()
-            ])
+            w.writerow(
+                [
+                    "|".join(v) if isinstance(v, list) else ("" if v is None else str(v))
+                    for v in row.values()
+                ]
+            )
         print(buf.getvalue(), end="")
         return
 
     # table (default) — Rich
     from rich.console import Console
     from rich.table import Table
+
     console = Console()
     table = Table(show_header=True, box=None, padding=(0, 1))
     table.add_column("interval", style="bold cyan", no_wrap=True)
@@ -658,6 +701,7 @@ def cmd_list(
 # status / active
 # ---------------------------------------------------------------------------
 
+
 def cmd_status(*, session_id: str | None = None) -> None:
     """Show this session's open interval(s): bead, tuple, elapsed."""
     project_root = _project_root()
@@ -669,8 +713,9 @@ def cmd_status(*, session_id: str | None = None) -> None:
         root_log.info("no active interval in this session (%s)", sid)
         others = len({iv.session for iv in all_open})
         if others:
-            root_log.info("(%d interval(s) active in other sessions — see `bd-track active`)",
-                          len(all_open))
+            root_log.info(
+                "(%d interval(s) active in other sessions — see `bd-track active`)", len(all_open)
+            )
         return
 
     for iv in mine:
@@ -693,13 +738,14 @@ def cmd_status(*, session_id: str | None = None) -> None:
 
     other = [iv for iv in all_open if iv.session != sid]
     if other:
-        root_log.info("(%d interval(s) active in other sessions — see `bd-track active`)",
-                      len(other))
+        root_log.info(
+            "(%d interval(s) active in other sessions — see `bd-track active`)", len(other)
+        )
 
 
-def cmd_active(*, session_id: str | None = None,
-               project_dir: Path | None = None,
-               global_scope: bool = False) -> None:
+def cmd_active(
+    *, session_id: str | None = None, project_dir: Path | None = None, global_scope: bool = False
+) -> None:
     """Show ALL open intervals across ALL sessions (the multi-active view)."""
     roots = _project_roots(project_dir, global_scope)
     # Resolve the caller's session id from the first available root; fall back
@@ -723,13 +769,20 @@ def cmd_active(*, session_id: str | None = None,
         marker = "*" if (sid and iv.session == sid) else " "
         tuple_ = _tuple_from_tags(iv.tags)
         tup = " ".join(f"{k}:{v}" for k in _TUPLE_KEYS if (v := tuple_[k])) or "(no tuple)"
-        root_log.info("%s %-20s %-14s %-7s  %s", marker, iv.session or "?",
-                      iv.bead or "(no bead)", _elapsed(iv.start), tup)
+        root_log.info(
+            "%s %-20s %-14s %-7s  %s",
+            marker,
+            iv.session or "?",
+            iv.bead or "(no bead)",
+            _elapsed(iv.start),
+            tup,
+        )
 
 
 # ---------------------------------------------------------------------------
 # report
 # ---------------------------------------------------------------------------
+
 
 def _in_range(iv: Interval, since: dt.date | None, until: dt.date | None) -> bool:
     if iv.start is None:
@@ -742,11 +795,16 @@ def _in_range(iv: Interval, since: dt.date | None, until: dt.date | None) -> boo
     return True
 
 
-def cmd_report(*, group_by: str = "bead", policy_name: str = "billing",
-               since: str | None = None, until: str | None = None,
-               session_id: str | None = None,
-               project_dir: Path | None = None,
-               global_scope: bool = False) -> None:
+def cmd_report(
+    *,
+    group_by: str = "bead",
+    policy_name: str = "billing",
+    since: str | None = None,
+    until: str | None = None,
+    session_id: str | None = None,
+    project_dir: Path | None = None,
+    global_scope: bool = False,
+) -> None:
     """Aggregate closed intervals; group by a dimension under a named policy."""
     roots = _project_roots(project_dir, global_scope)
     policy = POLICIES[policy_name]
@@ -764,13 +822,17 @@ def cmd_report(*, group_by: str = "bead", policy_name: str = "billing",
         root_log.info("Report by %s  [policy: %s]", group_by, policy_name)
         total = dt.timedelta(0)
         for r in rows:
-            root_log.info("  %-24s %8s  (%d interval(s))",
-                          str(r.group) if r.group is not None else "(none)",
-                          _format_duration(r.duration), r.intervals)
+            root_log.info(
+                "  %-24s %8s  (%d interval(s))",
+                str(r.group) if r.group is not None else "(none)",
+                _format_duration(r.duration),
+                r.intervals,
+            )
             total += r.duration
         root_log.info("  %-24s %8s", "TOTAL", _format_duration(total))
 
     stale = [iv for iv in intervals if iv.status == "open"]
     if stale:
-        root_log.info("(%d open/stale interval(s) excluded from totals — see `bd-track active`)",
-                      len(stale))
+        root_log.info(
+            "(%d open/stale interval(s) excluded from totals — see `bd-track active`)", len(stale)
+        )

@@ -56,8 +56,18 @@ from bd_track.session import SESSION_STATE_DIR
 PUSH_LOG = SESSION_STATE_DIR / "dolt-push.jsonl"
 PUSH_LOG_VERSION = 1  # bump when a field changes meaning; adding a field does not need it
 PUSH_LOG_FIELDS = (
-    "v", "timestamp", "host", "project", "database", "mode", "remote", "db_bytes", "duration_s",
-    "result", "forced", "output",
+    "v",
+    "timestamp",
+    "host",
+    "project",
+    "database",
+    "mode",
+    "remote",
+    "db_bytes",
+    "duration_s",
+    "result",
+    "forced",
+    "output",
 )
 # Output tail kept per record. Keeps each line far below PIPE_BUF (4096 bytes), the size up to
 # which an O_APPEND write is atomic, so concurrent writers never interleave.
@@ -96,7 +106,7 @@ def _local_path(url: str) -> Path | None:
     """The filesystem path a local remote URL names (``/x``, ``~/x``, ``file://``), else None."""
     for prefix in ("git+file://", "file://"):
         if url.startswith(prefix):
-            return Path(url[len(prefix):]).expanduser().resolve()
+            return Path(url[len(prefix) :]).expanduser().resolve()
     if url.startswith(("/", "~")):
         return Path(url).expanduser().resolve()
     return None
@@ -117,7 +127,10 @@ def _git_rewrite(url: str) -> str:
     try:
         result = subprocess.run(
             ["git", "ls-remote", "--get-url", url],
-            check=False, text=True, capture_output=True, timeout=RESOLVE_TIMEOUT,
+            check=False,
+            text=True,
+            capture_output=True,
+            timeout=RESOLVE_TIMEOUT,
         )
     except (OSError, subprocess.TimeoutExpired):
         return url
@@ -131,7 +144,10 @@ def _ssh_hostname(host: str) -> str:
     try:
         result = subprocess.run(
             ["ssh", "-G", host],
-            check=False, text=True, capture_output=True, timeout=RESOLVE_TIMEOUT,
+            check=False,
+            text=True,
+            capture_output=True,
+            timeout=RESOLVE_TIMEOUT,
         )
     except (OSError, subprocess.TimeoutExpired):
         return host
@@ -185,7 +201,9 @@ def _canonical(url: str) -> tuple:
 def _code_remotes(project_root: Path) -> list[str]:
     result = subprocess.run(
         ["git", "-C", str(project_root), "remote", "-v"],
-        check=False, text=True, capture_output=True,
+        check=False,
+        text=True,
+        capture_output=True,
     )
     if result.returncode != 0:
         return []
@@ -198,7 +216,8 @@ def github_is_public(slug: str) -> bool:
     Raises ``PushSkipped`` when the answer is unknown (network trouble, rate limit).
     """
     request = urllib.request.Request(
-        GITHUB_API.format(slug=slug), headers={"Accept": "application/vnd.github+json"},
+        GITHUB_API.format(slug=slug),
+        headers={"Accept": "application/vnd.github+json"},
     )
     try:
         with urllib.request.urlopen(request, timeout=API_TIMEOUT):
@@ -210,9 +229,7 @@ def github_is_public(slug: str) -> bool:
             f"cannot tell whether {slug} is public (GitHub API: HTTP {err.code})"
         ) from err
     except (urllib.error.URLError, TimeoutError, OSError) as err:
-        raise PushSkipped(
-            f"cannot tell whether {slug} is public (GitHub API: {err})"
-        ) from err
+        raise PushSkipped(f"cannot tell whether {slug} is public (GitHub API: {err})") from err
 
 
 def check_remote(url: str, project: Project, project_root: Path) -> None:
@@ -266,7 +283,12 @@ class Database:
             argv, cwd = ["bd", "sql", "--csv", query], self.project_root
         try:
             result = subprocess.run(
-                argv, cwd=cwd, check=False, text=True, capture_output=True, timeout=SQL_TIMEOUT,
+                argv,
+                cwd=cwd,
+                check=False,
+                text=True,
+                capture_output=True,
+                timeout=SQL_TIMEOUT,
             )
         except subprocess.TimeoutExpired as err:
             raise PushSkipped(f"SQL timed out after {SQL_TIMEOUT}s: {query}") from err
@@ -361,7 +383,11 @@ def run_push(project_root: Path, timeout: float, argv: tuple[str, ...] = PUSH_AR
     """``bd dolt push`` in its own process group; the whole group is killed on timeout."""
     start = time.monotonic()
     proc = subprocess.Popen(
-        argv, cwd=project_root, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        argv,
+        cwd=project_root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
         start_new_session=True,
     )
     try:
@@ -424,7 +450,7 @@ def _tail(out: str | None) -> str:
     error = _error_line(lines)
     if error and error not in (line.strip() for line in tail):
         head = error[: OUTPUT_MAX // 2]
-        return head + "\n…\n" + "\n".join(tail)[-(OUTPUT_MAX - len(head) - 3):]
+        return head + "\n…\n" + "\n".join(tail)[-(OUTPUT_MAX - len(head) - 3) :]
     return "\n".join(tail)[-OUTPUT_MAX:]
 
 
@@ -443,7 +469,11 @@ def database_bytes(db: Database) -> int | None:
 
 
 def record_push(
-    project: Project, db: Database, url: str, result: PushResult, log_path: Path | None = None,
+    project: Project,
+    db: Database,
+    url: str,
+    result: PushResult,
+    log_path: Path | None = None,
 ) -> None:
     """Append one JSON line to the timing log.
 
@@ -525,7 +555,9 @@ def push_project(
     if result.ok:
         log.info(
             "push: ok in %.1fs%s (%s)",
-            result.duration, " after a forced retry" if result.forced else "", result.detail,
+            result.duration,
+            " after a forced retry" if result.forced else "",
+            result.detail,
         )
     else:
         log.error("push failed in %.1fs: %s (retried next run)", result.duration, result.detail)

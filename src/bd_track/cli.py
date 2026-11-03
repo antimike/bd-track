@@ -50,31 +50,40 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
         ),
         formatter_class=HelpFormatter,
     )
+
     # The shared options are accepted before or after <action>. On the subparsers they
     # default to SUPPRESS so an option given before the action is not reset to None.
     def add_common(parser: argparse.ArgumentParser, default: object) -> None:
         parser.add_argument(
-            "--inbox", type=Path, default=default,
+            "--inbox",
+            type=Path,
+            default=default,
             help="The project's inbox directory (holds triage/ and done/).",
         )
         parser.add_argument(
-            "--project-dir", type=Path, default=default,
+            "--project-dir",
+            type=Path,
+            default=default,
             help="Project root; names the inbox and is where beads are created. "
-                 "Defaults to the current git repository.",
+            "Defaults to the current git repository.",
         )
         parser.add_argument(
-            "--dry-run", action="store_true", default=False if default is None else default,
+            "--dry-run",
+            action="store_true",
+            default=False if default is None else default,
             help="Print what would happen without writing anything.",
         )
 
     add_common(p_triage, None)
-    tsub = p_triage.add_subparsers(dest="triage_action", required=False,
-                                   title="triage actions", metavar="<action>")
+    tsub = p_triage.add_subparsers(
+        dest="triage_action", required=False, title="triage actions", metavar="<action>"
+    )
     common = argparse.ArgumentParser(add_help=False)
     add_common(common, argparse.SUPPRESS)
 
     p_list = tsub.add_parser(
-        "list", parents=[common],
+        "list",
+        parents=[common],
         help="List the open tickets in the inbox.",
         description=(
             "List open tickets: files in triage/ (name order), then inbox.md "
@@ -85,11 +94,16 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
         ),
         formatter_class=HelpFormatter,
     )
-    p_list.add_argument("--json", action="store_true", dest="as_json",
-                        help="Print JSON (the contract for scripts and agents).")
+    p_list.add_argument(
+        "--json",
+        action="store_true",
+        dest="as_json",
+        help="Print JSON (the contract for scripts and agents).",
+    )
 
     p_resolve = tsub.add_parser(
-        "resolve", parents=[common],
+        "resolve",
+        parents=[common],
         help="Record a decision on one ticket and move it to done/.",
         description=(
             "Resolve one open ticket: --bead creates a bead (label triage) and records "
@@ -99,29 +113,47 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
         ),
         formatter_class=HelpFormatter,
     )
-    p_resolve.add_argument("ticket_id", metavar="<ticket>",
-                           help="Ticket id: a file name (with or without .md) or inbox-<hash>.")
+    p_resolve.add_argument(
+        "ticket_id",
+        metavar="<ticket>",
+        help="Ticket id: a file name (with or without .md) or inbox-<hash>.",
+    )
     action = p_resolve.add_mutually_exclusive_group(required=True)
-    action.add_argument("--bead", action="store_true",
-                        help="Accept: create a bead from the ticket.")
+    action.add_argument(
+        "--bead", action="store_true", help="Accept: create a bead from the ticket."
+    )
     action.add_argument("--reject", metavar="REASON", help="Reject, with a one-line reason.")
-    action.add_argument("--duplicate", metavar="ID",
-                        help="Duplicate of a bead, ticket or doc.")
-    action.add_argument("--done", metavar="OUTCOME",
-                        help="Handled without a bead (e.g. a doc change); say where.")
+    action.add_argument("--duplicate", metavar="ID", help="Duplicate of a bead, ticket or doc.")
+    action.add_argument(
+        "--done", metavar="OUTCOME", help="Handled without a bead (e.g. a doc change); say where."
+    )
     bead_opts = p_resolve.add_argument_group("bead options (with --bead)")
-    bead_opts.add_argument("--title", default=None,
-                           help="Bead title (default: the ticket's title).")
-    bead_opts.add_argument("--description", default=None,
-                           help="Bead description (default: the ticket's body). A "
-                                "'ticket: done/<file>' line is always appended.")
-    bead_opts.add_argument("--type", dest="bead_type", default=None,
-                           help="Bead type (default: from the ticket type; idea/question -> task).")
-    bead_opts.add_argument("--priority", type=int, choices=range(5), default=None,
-                           help="Bead priority 0-4 (default: urgency high/normal/low -> 1/2/3).")
+    bead_opts.add_argument(
+        "--title", default=None, help="Bead title (default: the ticket's title)."
+    )
+    bead_opts.add_argument(
+        "--description",
+        default=None,
+        help="Bead description (default: the ticket's body). A "
+        "'ticket: done/<file>' line is always appended.",
+    )
+    bead_opts.add_argument(
+        "--type",
+        dest="bead_type",
+        default=None,
+        help="Bead type (default: from the ticket type; idea/question -> task).",
+    )
+    bead_opts.add_argument(
+        "--priority",
+        type=int,
+        choices=range(5),
+        default=None,
+        help="Bead priority 0-4 (default: urgency high/normal/low -> 1/2/3).",
+    )
 
     p_ask = tsub.add_parser(
-        "ask", parents=[common],
+        "ask",
+        parents=[common],
         help="Append a '## Triage <date>' question to a ticket; it stays open.",
         description=(
             "Record what is unclear and who must answer. A quick note is promoted to "
@@ -130,8 +162,11 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
         ),
         formatter_class=HelpFormatter,
     )
-    p_ask.add_argument("ticket_id", metavar="<ticket>",
-                       help="Ticket id: a file name (with or without .md) or inbox-<hash>.")
+    p_ask.add_argument(
+        "ticket_id",
+        metavar="<ticket>",
+        help="Ticket id: a file name (with or without .md) or inbox-<hash>.",
+    )
     p_ask.add_argument("question", metavar="<question>")
 
 
@@ -162,57 +197,87 @@ def _add_queue_parsers(sub: argparse._SubParsersAction) -> None:
         ),
         formatter_class=HelpFormatter,
     )
-    qsub = p_queue.add_subparsers(dest="queue_action", required=True,
-                                  title="queue actions", metavar="<action>")
+    qsub = p_queue.add_subparsers(
+        dest="queue_action", required=True, title="queue actions", metavar="<action>"
+    )
 
     # Common args reused by every action.
     common = argparse.ArgumentParser(add_help=False)
     common.add_argument(
-        "--scope", metavar="<scope>", default=None,
+        "--scope",
+        metavar="<scope>",
+        default=None,
         help="Queue scope name. Resolved: --scope flag → $BD_TRACK_SCOPE → 'default'.",
     )
     common.add_argument(
-        "--project-dir", type=Path, default=None,
+        "--project-dir",
+        type=Path,
+        default=None,
         help="Project root containing .beads/. Defaults to active workspace.",
     )
     common.add_argument(
-        "--titles", "-t", action="store_true", default=False,
+        "--titles",
+        "-t",
+        action="store_true",
+        default=False,
         help="Show bead titles alongside IDs (fetches each bead from bd; slower).",
     )
 
     # -- push / unshift / pop / peek / list / remove / clear -----------------
-    p_push = qsub.add_parser("push", parents=[common],
-                             help="Append one or more beads to the tail of a queue scope.",
-                             formatter_class=HelpFormatter)
+    p_push = qsub.add_parser(
+        "push",
+        parents=[common],
+        help="Append one or more beads to the tail of a queue scope.",
+        formatter_class=HelpFormatter,
+    )
     p_push.add_argument("ids", nargs="+", metavar="<id>")
 
-    p_unshift = qsub.add_parser("unshift", parents=[common],
-                                help="Prepend a bead to the head of a queue scope.",
-                                formatter_class=HelpFormatter)
+    p_unshift = qsub.add_parser(
+        "unshift",
+        parents=[common],
+        help="Prepend a bead to the head of a queue scope.",
+        formatter_class=HelpFormatter,
+    )
     p_unshift.add_argument("bead_id", metavar="<id>")
 
-    qsub.add_parser("pop", parents=[common],
-                    help="Remove and print the head bead of a queue scope.",
-                    formatter_class=HelpFormatter)
-    qsub.add_parser("peek", parents=[common],
-                    help="Print the head bead of a queue scope without removing.",
-                    formatter_class=HelpFormatter)
-    qsub.add_parser("list", parents=[common],
-                    help="List queue contents (all scopes, or one with --scope).",
-                    formatter_class=HelpFormatter)
+    qsub.add_parser(
+        "pop",
+        parents=[common],
+        help="Remove and print the head bead of a queue scope.",
+        formatter_class=HelpFormatter,
+    )
+    qsub.add_parser(
+        "peek",
+        parents=[common],
+        help="Print the head bead of a queue scope without removing.",
+        formatter_class=HelpFormatter,
+    )
+    qsub.add_parser(
+        "list",
+        parents=[common],
+        help="List queue contents (all scopes, or one with --scope).",
+        formatter_class=HelpFormatter,
+    )
 
-    p_remove = qsub.add_parser("remove", parents=[common],
-                               help="Remove one or more beads from a queue scope.",
-                               formatter_class=HelpFormatter)
+    p_remove = qsub.add_parser(
+        "remove",
+        parents=[common],
+        help="Remove one or more beads from a queue scope.",
+        formatter_class=HelpFormatter,
+    )
     p_remove.add_argument("ids", nargs="+", metavar="<id>")
 
-    qsub.add_parser("clear", parents=[common],
-                    help="Empty a queue scope (--scope all clears every scope).",
-                    formatter_class=HelpFormatter)
+    qsub.add_parser(
+        "clear",
+        parents=[common],
+        help="Empty a queue scope (--scope all clears every scope).",
+        formatter_class=HelpFormatter,
+    )
 
     # -- clean -- mechanical sweep of stale entries (closed / deferred) ------
     qsub.add_parser(
-        "clean", parents=[common],
+        "clean",
+        parents=[common],
         help="Remove closed/deferred beads from queue scopes (no confirmation).",
         description=(
             "Mechanical sweep: queries bd for the status of every queue entry "
@@ -224,7 +289,8 @@ def _add_queue_parsers(sub: argparse._SubParsersAction) -> None:
 
     # -- generate -- build a queue from filters ------------------------------
     p_gen = qsub.add_parser(
-        "generate", parents=[common],
+        "generate",
+        parents=[common],
         help="Generate a queue from `bd list` search/filter criteria.",
         description=(
             "Populate a queue scope from beads matching the given filters. "
@@ -234,37 +300,55 @@ def _add_queue_parsers(sub: argparse._SubParsersAction) -> None:
         formatter_class=HelpFormatter,
     )
     p_gen.add_argument(
-        "--status", default="open,in_progress",
+        "--status",
+        default="open,in_progress",
         help="Comma-separated bd statuses to include (default: open,in_progress).",
     )
     p_gen.add_argument(
-        "--label", action="append", default=[], metavar="<label>",
+        "--label",
+        action="append",
+        default=[],
+        metavar="<label>",
         help="Require this label (repeatable; AND).",
     )
     p_gen.add_argument(
-        "--label-any", action="append", default=[], metavar="<label>",
+        "--label-any",
+        action="append",
+        default=[],
+        metavar="<label>",
         help="Require at least one of these labels (repeatable; OR).",
     )
     p_gen.add_argument(
-        "--label-pattern", default=None, metavar="<glob>",
+        "--label-pattern",
+        default=None,
+        metavar="<glob>",
         help="Filter by label glob pattern (e.g. 'area:*').",
     )
     p_gen.add_argument(
-        "--keyword", "-k", default=None, metavar="<text>",
+        "--keyword",
+        "-k",
+        default=None,
+        metavar="<text>",
         help="Title substring match (case-insensitive).",
     )
     p_gen.add_argument(
-        "--append", action="store_true", default=False,
+        "--append",
+        action="store_true",
+        default=False,
         help="Append matches to existing queue instead of replacing.",
     )
     p_gen.add_argument(
-        "--yes", "-y", action="store_true", default=False,
+        "--yes",
+        "-y",
+        action="store_true",
+        default=False,
         help="Skip confirmation when replacing a non-empty queue.",
     )
 
     # -- prune -- analytical: identify issues, propose changes ---------------
     p_prune = qsub.add_parser(
-        "prune", parents=[common],
+        "prune",
+        parents=[common],
         help="Identify stale/scope-mismatched/out-of-order entries; propose changes.",
         description=(
             "Analyse one or all queue scopes and surface: stale entries, scope "
@@ -277,7 +361,10 @@ def _add_queue_parsers(sub: argparse._SubParsersAction) -> None:
         formatter_class=HelpFormatter,
     )
     p_prune.add_argument(
-        "--yes", "-y", action="store_true", default=False,
+        "--yes",
+        "-y",
+        action="store_true",
+        default=False,
         help="Apply destructive changes (stale removal) without confirmation.",
     )
 
@@ -289,30 +376,41 @@ def get_cli_arguments() -> argparse.Namespace:
         formatter_class=HelpFormatter,
     )
     parser.add_argument(
-        "--loglevel", "-l",
+        "--loglevel",
+        "-l",
         default="INFO",
         type=lambda v: v.strip().upper(),
         help="Logging verbosity (DEBUG, INFO, WARNING, ERROR).",
     )
     parser.add_argument(
-        "--session-id", metavar="<id>", default=None,
+        "--session-id",
+        metavar="<id>",
+        default=None,
         help="Explicit session id (overrides $BD_TRACK_SESSION_ID, "
-             "$CLAUDE_CODE_SESSION_ID, and the current-session pointer).",
+        "$CLAUDE_CODE_SESSION_ID, and the current-session pointer).",
     )
 
     scope_group = parser.add_mutually_exclusive_group()
     scope_group.add_argument(
-        "--project", metavar="<slug-or-path>", dest="project_scope", default=None,
+        "--project",
+        metavar="<slug-or-path>",
+        dest="project_scope",
+        default=None,
         help="Override project scope: resolve <slug-or-path> via repos.yaml name or path.",
     )
     scope_group.add_argument(
-        "--global", action="store_true", dest="global_scope", default=False,
+        "--global",
+        action="store_true",
+        dest="global_scope",
+        default=False,
         help="Operate across all repos registered in repos.yaml.",
     )
 
     sub = parser.add_subparsers(
-        dest="cmd", required=True,
-        title="subcommands", metavar="<command>",
+        dest="cmd",
+        required=True,
+        title="subcommands",
+        metavar="<command>",
     )
 
     # -- start ---------------------------------------------------------------
@@ -345,16 +443,24 @@ def get_cli_arguments() -> argparse.Namespace:
         formatter_class=HelpFormatter,
     )
     p_stop.add_argument(
-        "issue_id", metavar="<issue-id>", nargs="?", default=None,
+        "issue_id",
+        metavar="<issue-id>",
+        nargs="?",
+        default=None,
         help="Stop only the interval tagged with this bead ID (recommended).",
     )
     p_stop.add_argument(
-        "--at", metavar="<datetime>", default=None,
+        "--at",
+        metavar="<datetime>",
+        default=None,
         help="Override stop timestamp (natural language or ISO-8601; "
-             "must be in the past and after the interval's start time).",
+        "must be in the past and after the interval's start time).",
     )
     p_stop.add_argument(
-        "--no-clean", action="store_false", dest="clean", default=True,
+        "--no-clean",
+        action="store_false",
+        dest="clean",
+        default=True,
         help="Skip the post-stop queue sweep for closed beads.",
     )
 
@@ -370,15 +476,22 @@ def get_cli_arguments() -> argparse.Namespace:
         ),
         formatter_class=HelpFormatter,
     )
-    p_show.add_argument("interval_id", metavar="<interval-id>",
-                        help="Full interval ULID or unique 8-character prefix.")
     p_show.add_argument(
-        "--format", dest="fmt", default="table",
+        "interval_id",
+        metavar="<interval-id>",
+        help="Full interval ULID or unique 8-character prefix.",
+    )
+    p_show.add_argument(
+        "--format",
+        dest="fmt",
+        default="table",
         choices=("table", "json", "yaml", "csv", "tsv"),
         help="Output format (default: table).",
     )
     p_show.add_argument(
-        "--pretty", action="store_true", default=False,
+        "--pretty",
+        action="store_true",
+        default=False,
         help="2-space indent for JSON output; no-op for other formats.",
     )
 
@@ -394,10 +507,16 @@ def get_cli_arguments() -> argparse.Namespace:
         ),
         formatter_class=HelpFormatter,
     )
-    p_cancel.add_argument("interval_id", metavar="<interval-id>",
-                          help="Full interval ULID or unique 8-character prefix.")
     p_cancel.add_argument(
-        "--yes", "-y", action="store_true", default=False,
+        "interval_id",
+        metavar="<interval-id>",
+        help="Full interval ULID or unique 8-character prefix.",
+    )
+    p_cancel.add_argument(
+        "--yes",
+        "-y",
+        action="store_true",
+        default=False,
         help="Skip confirmation prompt.",
     )
 
@@ -420,40 +539,65 @@ def get_cli_arguments() -> argparse.Namespace:
         ),
         formatter_class=HelpFormatter,
     )
-    p_amend.add_argument("interval_id", metavar="<interval-id>",
-                         help="Full interval ULID or unique 8-character prefix.")
     p_amend.add_argument(
-        "--start", metavar="<datetime>", default=None,
+        "interval_id",
+        metavar="<interval-id>",
+        help="Full interval ULID or unique 8-character prefix.",
+    )
+    p_amend.add_argument(
+        "--start",
+        metavar="<datetime>",
+        default=None,
         help="Override start time (natural language or ISO-8601).",
     )
     p_amend.add_argument(
-        "--stop", metavar="<datetime>", default=None,
+        "--stop",
+        metavar="<datetime>",
+        default=None,
         help="Override stop time (natural language or ISO-8601).",
     )
     p_amend.add_argument(
-        "--add-tag", dest="add_tags", action="append", default=[], metavar="<tag>",
+        "--add-tag",
+        dest="add_tags",
+        action="append",
+        default=[],
+        metavar="<tag>",
         help="Add a tag (repeatable; mutually exclusive with --tags).",
     )
     p_amend.add_argument(
-        "--remove-tag", dest="remove_tags", action="append", default=[], metavar="<tag>",
+        "--remove-tag",
+        dest="remove_tags",
+        action="append",
+        default=[],
+        metavar="<tag>",
         help="Remove a tag (repeatable; mutually exclusive with --tags).",
     )
     p_amend.add_argument(
-        "--tag", dest="tag_ops", action="append", default=[], metavar="+tag|~tag",
+        "--tag",
+        dest="tag_ops",
+        action="append",
+        default=[],
+        metavar="+tag|~tag",
         help="Add (+tag) or remove (~tag) a tag shorthand (repeatable; "
-             "mutually exclusive with --tags).",
+        "mutually exclusive with --tags).",
     )
     p_amend.add_argument(
-        "--tags", dest="tags_csv", default=None, metavar="<tag,tag,...>",
+        "--tags",
+        dest="tags_csv",
+        default=None,
+        metavar="<tag,tag,...>",
         help="Wholesale-replace the tag list (comma-delimited; "
-             "mutually exclusive with --add-tag/--remove-tag/--tag).",
+        "mutually exclusive with --add-tag/--remove-tag/--tag).",
     )
-    p_amend.add_argument("--actor", default=None, metavar="<str>",
-                         help="Override actor field.")
-    p_amend.add_argument("--role", default=None, metavar="<str>",
-                         help="Override role field.")
-    p_amend.add_argument("--group-id", dest="group_id", default=None, metavar="<str>",
-                         help="Override group_id field.")
+    p_amend.add_argument("--actor", default=None, metavar="<str>", help="Override actor field.")
+    p_amend.add_argument("--role", default=None, metavar="<str>", help="Override role field.")
+    p_amend.add_argument(
+        "--group-id",
+        dest="group_id",
+        default=None,
+        metavar="<str>",
+        help="Override group_id field.",
+    )
 
     # -- switch --------------------------------------------------------------
     p_switch = sub.add_parser(
@@ -463,7 +607,10 @@ def get_cli_arguments() -> argparse.Namespace:
     )
     p_switch.add_argument("issue_id", metavar="<issue-id>")
     p_switch.add_argument(
-        "--from", dest="from_issue_id", metavar="<issue-id>", default=None,
+        "--from",
+        dest="from_issue_id",
+        metavar="<issue-id>",
+        default=None,
         help="Stop only the interval tagged with this bead ID (recommended).",
     )
 
@@ -480,47 +627,71 @@ def get_cli_arguments() -> argparse.Namespace:
         formatter_class=HelpFormatter,
     )
     p_list.add_argument(
-        "--from", dest="from_dt", metavar="<datetime>", default=None,
+        "--from",
+        dest="from_dt",
+        metavar="<datetime>",
+        default=None,
         help="Include intervals starting at or after this time (natural language or ISO-8601).",
     )
     p_list.add_argument(
-        "--to", dest="to_dt", metavar="<datetime>", default=None,
+        "--to",
+        dest="to_dt",
+        metavar="<datetime>",
+        default=None,
         help="Include intervals starting at or before this time (natural language or ISO-8601).",
     )
     p_list.add_argument(
-        "--bead", metavar="<id>", default=None,
+        "--bead",
+        metavar="<id>",
+        default=None,
         help="Filter to intervals tagged with this bead ID.",
     )
     p_list.add_argument(
-        "--actor", metavar="<str>", default=None,
+        "--actor",
+        metavar="<str>",
+        default=None,
         help="Filter by actor field.",
     )
     p_list.add_argument(
-        "--status", dest="status_filter", metavar="open|closed|cancelled",
-        action="append", default=None,
+        "--status",
+        dest="status_filter",
+        metavar="open|closed|cancelled",
+        action="append",
+        default=None,
         choices=("open", "closed", "cancelled"),
         help="Include only intervals with this status (repeatable; default: all).",
     )
     p_list.add_argument(
-        "--session", dest="session_filter", metavar="<uuid-prefix>", default=None,
+        "--session",
+        dest="session_filter",
+        metavar="<uuid-prefix>",
+        default=None,
         help="Filter to intervals from this session (full UUID or unique prefix).",
     )
     p_list.add_argument(
-        "--format", dest="fmt", default="table",
+        "--format",
+        dest="fmt",
+        default="table",
         choices=("table", "json", "yaml", "csv", "tsv"),
         help="Output format (default: table).",
     )
     p_list.add_argument(
-        "--pretty", action="store_true", default=False,
+        "--pretty",
+        action="store_true",
+        default=False,
         help="2-space indent for JSON output; no-op for other formats.",
     )
     p_list.add_argument(
-        "--sort", dest="sort_by", default="start",
+        "--sort",
+        dest="sort_by",
+        default="start",
         choices=("start", "stop", "duration"),
         help="Sort field (default: start).",
     )
     p_list.add_argument(
-        "--desc", action="store_true", default=False,
+        "--desc",
+        action="store_true",
+        default=False,
         help="Reverse sort order.",
     )
 
@@ -555,19 +726,33 @@ def get_cli_arguments() -> argparse.Namespace:
         formatter_class=HelpFormatter,
     )
     p_report.add_argument(
-        "--by", dest="group_by", default="bead", metavar="<dim>",
+        "--by",
+        dest="group_by",
+        default="bead",
+        metavar="<dim>",
         help="Output grouping: bead|session|actor|role|group_id or a tag key "
-             "(client/case/svc/...). Default: bead.",
+        "(client/case/svc/...). Default: bead.",
     )
     p_report.add_argument(
-        "--policy", dest="policy_name", default="billing",
-        choices=sorted(_REPORT_POLICIES), metavar="<policy>",
+        "--policy",
+        dest="policy_name",
+        default="billing",
+        choices=sorted(_REPORT_POLICIES),
+        metavar="<policy>",
         help="Aggregation policy: billing|machine|wallclock. Default: billing.",
     )
-    p_report.add_argument("--since", default=None, metavar="<YYYY-MM-DD>",
-                          help="Only intervals starting on/after this date.")
-    p_report.add_argument("--until", default=None, metavar="<YYYY-MM-DD>",
-                          help="Only intervals starting on/before this date.")
+    p_report.add_argument(
+        "--since",
+        default=None,
+        metavar="<YYYY-MM-DD>",
+        help="Only intervals starting on/after this date.",
+    )
+    p_report.add_argument(
+        "--until",
+        default=None,
+        metavar="<YYYY-MM-DD>",
+        help="Only intervals starting on/before this date.",
+    )
 
     # -- resolve -------------------------------------------------------------
     p_resolve = sub.add_parser(
@@ -595,7 +780,9 @@ def get_cli_arguments() -> argparse.Namespace:
         formatter_class=HelpFormatter,
     )
     p_session_current.add_argument(
-        "--project-dir", type=Path, default=None,
+        "--project-dir",
+        type=Path,
+        default=None,
         help="Project root containing .beads/. Defaults to active workspace.",
     )
 
@@ -616,12 +803,18 @@ def get_cli_arguments() -> argparse.Namespace:
         ),
         formatter_class=HelpFormatter,
     )
-    p_cleanup.add_argument("--days", type=int, default=7,
-                          help="Retain this many days of Dolt commit history.")
-    p_cleanup.add_argument("--commit", action="store_true",
-                          help="Run  bd dolt commit  before compacting.")
-    p_cleanup.add_argument("--project-dir", type=Path, default=None,
-                          help="Project root containing .beads/. Defaults to active workspace.")
+    p_cleanup.add_argument(
+        "--days", type=int, default=7, help="Retain this many days of Dolt commit history."
+    )
+    p_cleanup.add_argument(
+        "--commit", action="store_true", help="Run  bd dolt commit  before compacting."
+    )
+    p_cleanup.add_argument(
+        "--project-dir",
+        type=Path,
+        default=None,
+        help="Project root containing .beads/. Defaults to active workspace.",
+    )
 
     # -- init-project --------------------------------------------------------
     p_init = sub.add_parser(
@@ -643,28 +836,38 @@ def get_cli_arguments() -> argparse.Namespace:
     p_init.add_argument("--pass-path", type=str, default=None)
     p_init.add_argument("--yes", "-y", action="store_true")
     p_init.add_argument(
-        "--bootstrap", action=argparse.BooleanOptionalAction, default=True,
+        "--bootstrap",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Run `bd init` first if .beads/ is missing (default: enabled).",
     )
     p_init.add_argument(
-        "--sandbox", action=argparse.BooleanOptionalAction, default=True,
+        "--sandbox",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help="Forward --sandbox to bd init (default: enabled — disables auto-sync "
-             "during init, the empirically-safe setting).",
+        "during init, the empirically-safe setting).",
     )
     p_init.add_argument(
-        "--prefix", type=str, default=None,
+        "--prefix",
+        type=str,
+        default=None,
         help="Issue prefix for bd init (e.g. 'PROJ'). Forwarded only when bootstrapping.",
     )
     p_init.add_argument(
-        "--name", type=str, default=None,
+        "--name",
+        type=str,
+        default=None,
         help="Project name in the registry (default: the directory basename, lowercased). "
-             "An already-registered project keeps its name.",
+        "An already-registered project keeps its name.",
     )
     p_init.add_argument(
-        "--agents-profile", type=str, default="full",
+        "--agents-profile",
+        type=str,
+        default="full",
         choices=["minimal", "full"],
         help="bd init --agents-profile value (default: full — full bd command reference "
-             "in the generated AGENTS.md).",
+        "in the generated AGENTS.md).",
     )
 
     # -- config init ---------------------------------------------------------
@@ -680,7 +883,9 @@ def get_cli_arguments() -> argparse.Namespace:
         formatter_class=HelpFormatter,
     )
     p_config_init.add_argument(
-        "--project-dir", type=Path, default=None,
+        "--project-dir",
+        type=Path,
+        default=None,
         help="Project root containing .beads/. Defaults to active workspace.",
     )
 
@@ -693,10 +898,16 @@ def get_cli_arguments() -> argparse.Namespace:
     p_idle.add_argument("--hours", type=float, default=4.0)
 
     # -- run-service / servers / server-stop ---------------------------------
-    sub.add_parser("run-service", help="[internal] systemd cleanup service entrypoint",
-                   formatter_class=HelpFormatter)
-    sub.add_parser("servers", help="List registered repos and Dolt server status.",
-                   formatter_class=HelpFormatter)
+    sub.add_parser(
+        "run-service",
+        help="[internal] systemd cleanup service entrypoint",
+        formatter_class=HelpFormatter,
+    )
+    sub.add_parser(
+        "servers",
+        help="List registered repos and Dolt server status.",
+        formatter_class=HelpFormatter,
+    )
     p_server_stop = sub.add_parser(
         "server-stop",
         help="Gracefully stop the Dolt server for one or all registered repos.",
@@ -720,8 +931,9 @@ def get_cli_arguments() -> argparse.Namespace:
         ),
         formatter_class=HelpFormatter,
     )
-    p_migrate_sub = p_migrate.add_subparsers(dest="migrate_action", required=True,
-                                             title="migrate actions", metavar="<action>")
+    p_migrate_sub = p_migrate.add_subparsers(
+        dest="migrate_action", required=True, title="migrate actions", metavar="<action>"
+    )
     p_migrate_rename = p_migrate_sub.add_parser(
         "rename",
         help="Rename bd-timew on-disk artifacts to bd-track (dry-run by default).",
@@ -735,19 +947,28 @@ def get_cli_arguments() -> argparse.Namespace:
         formatter_class=HelpFormatter,
     )
     p_migrate_rename.add_argument(
-        "--project-dir", type=Path, default=None,
+        "--project-dir",
+        type=Path,
+        default=None,
         help="Project root containing .beads/. Defaults to active workspace.",
     )
     p_migrate_rename.add_argument(
-        "--all-repos", action="store_true", default=False,
+        "--all-repos",
+        action="store_true",
+        default=False,
         help="Sweep every repo registered in repos.yaml, not just the current one.",
     )
     p_migrate_rename.add_argument(
-        "--apply", action="store_true", default=False,
+        "--apply",
+        action="store_true",
+        default=False,
         help="Perform the migration (default is a dry-run preview).",
     )
     p_migrate_rename.add_argument(
-        "--no-backup", action="store_false", dest="backup", default=True,
+        "--no-backup",
+        action="store_false",
+        dest="backup",
+        default=True,
         help="Skip the per-file .bak backup before rewriting env files.",
     )
 
@@ -766,7 +987,9 @@ def get_cli_arguments() -> argparse.Namespace:
         formatter_class=HelpFormatter,
     )
     p_migrate_registry.add_argument(
-        "--apply", action="store_true", default=False,
+        "--apply",
+        action="store_true",
+        default=False,
         help="Perform the migration (default is a dry-run preview).",
     )
 
@@ -783,15 +1006,21 @@ def get_cli_arguments() -> argparse.Namespace:
         formatter_class=HelpFormatter,
     )
     p_migrate_import.add_argument(
-        "--project-dir", type=Path, default=None,
+        "--project-dir",
+        type=Path,
+        default=None,
         help="Project root containing .beads/. Defaults to active workspace.",
     )
     p_migrate_import.add_argument(
-        "--from-file", type=Path, default=None,
+        "--from-file",
+        type=Path,
+        default=None,
         help="Read a saved `timew export` JSON file instead of invoking timew.",
     )
     p_migrate_import.add_argument(
-        "--apply", action="store_true", default=False,
+        "--apply",
+        action="store_true",
+        default=False,
         help="Perform the import (default is a dry-run preview).",
     )
 
@@ -810,6 +1039,7 @@ def _dispatch_queue(args: argparse.Namespace) -> None:
 
     if action in ("push", "unshift", "pop", "peek", "list", "remove", "clear"):
         from bd_track.queue import cmd_queue
+
         if action == "push":
             ids = args.ids
         elif action == "unshift":
@@ -819,18 +1049,23 @@ def _dispatch_queue(args: argparse.Namespace) -> None:
         else:
             ids = None
         cmd_queue(
-            action, ids=ids, scope_arg=args.scope,
-            project_dir=args.project_dir, titles=args.titles,
+            action,
+            ids=ids,
+            scope_arg=args.scope,
+            project_dir=args.project_dir,
+            titles=args.titles,
         )
         return
 
     if action == "clean":
         from bd_track.queue import cmd_clean
+
         cmd_clean(scope_arg=args.scope, project_dir=args.project_dir)
         return
 
     if action == "generate":
         from bd_track.queue import cmd_generate
+
         statuses = [s.strip() for s in args.status.split(",") if s.strip()]
         cmd_generate(
             scope_arg=args.scope,
@@ -847,6 +1082,7 @@ def _dispatch_queue(args: argparse.Namespace) -> None:
 
     if action == "prune":
         from bd_track.queue import cmd_prune
+
         cmd_prune(
             scope_arg=args.scope,
             project_dir=args.project_dir,
@@ -859,6 +1095,7 @@ def _resolve_project_scope(args: argparse.Namespace) -> Path | None:
     """Return the project_dir implied by ``--project``, or ``None``."""
     if args.project_scope:
         from bd_track.util import resolve_project_dir
+
         return resolve_project_dir(args.project_scope)
     return None
 
@@ -890,22 +1127,35 @@ def main() -> None:
     # for unrelated subcommands.
     if args.cmd == "start":
         from bd_track.track import cmd_start
+
         cmd_start(args.issue_id, session_id=args.session_id)
     elif args.cmd == "stop":
         from bd_track.track import cmd_stop
+
         cmd_stop(args.issue_id, clean=args.clean, session_id=args.session_id, at=args.at)
     elif args.cmd == "show":
         from bd_track.track import cmd_show
-        cmd_show(args.interval_id, fmt=args.fmt, pretty=args.pretty,
-                 session_id=args.session_id,
-                 project_dir=_resolve_project_scope(args),
-                 global_scope=args.global_scope)
+
+        cmd_show(
+            args.interval_id,
+            fmt=args.fmt,
+            pretty=args.pretty,
+            session_id=args.session_id,
+            project_dir=_resolve_project_scope(args),
+            global_scope=args.global_scope,
+        )
     elif args.cmd == "cancel":
         from bd_track.track import cmd_cancel
-        cmd_cancel(args.interval_id, yes=args.yes, session_id=args.session_id,
-                   project_dir=_resolve_project_scope(args))
+
+        cmd_cancel(
+            args.interval_id,
+            yes=args.yes,
+            session_id=args.session_id,
+            project_dir=_resolve_project_scope(args),
+        )
     elif args.cmd == "amend":
         from bd_track.track import cmd_amend
+
         cmd_amend(
             args.interval_id,
             start=args.start,
@@ -922,10 +1172,11 @@ def main() -> None:
         )
     elif args.cmd == "switch":
         from bd_track.track import cmd_switch
-        cmd_switch(args.issue_id, from_issue_id=args.from_issue_id,
-                   session_id=args.session_id)
+
+        cmd_switch(args.issue_id, from_issue_id=args.from_issue_id, session_id=args.session_id)
     elif args.cmd == "list":
         from bd_track.track import cmd_list
+
         cmd_list(
             from_dt=args.from_dt,
             to_dt=args.to_dt,
@@ -943,71 +1194,105 @@ def main() -> None:
         )
     elif args.cmd == "status":
         from bd_track.track import cmd_status
+
         cmd_status(session_id=args.session_id)
     elif args.cmd == "active":
         from bd_track.track import cmd_active
-        cmd_active(session_id=args.session_id,
-                   project_dir=_resolve_project_scope(args),
-                   global_scope=args.global_scope)
+
+        cmd_active(
+            session_id=args.session_id,
+            project_dir=_resolve_project_scope(args),
+            global_scope=args.global_scope,
+        )
     elif args.cmd == "report":
         from bd_track.track import cmd_report
-        cmd_report(group_by=args.group_by, policy_name=args.policy_name,
-                   since=args.since, until=args.until, session_id=args.session_id,
-                   project_dir=_resolve_project_scope(args),
-                   global_scope=args.global_scope)
+
+        cmd_report(
+            group_by=args.group_by,
+            policy_name=args.policy_name,
+            since=args.since,
+            until=args.until,
+            session_id=args.session_id,
+            project_dir=_resolve_project_scope(args),
+            global_scope=args.global_scope,
+        )
     elif args.cmd == "resolve":
         from bd_track.track import cmd_start
+
         cmd_start(args.issue_id, dry_run=True, session_id=args.session_id)
     elif args.cmd == "session":
         if args.session_action == "current":
             from bd_track.session import cmd_session_current
+
             cmd_session_current(project_dir=args.project_dir, explicit=args.session_id)
     elif args.cmd == "cleanup":
         from bd_track.project import cmd_cleanup
+
         cmd_cleanup(args.days, commit=args.commit, project_dir=args.project_dir)
     elif args.cmd == "init-project":
         from bd_track.project import cmd_init_project
+
         cmd_init_project(
-            path=args.path, days=args.days, commit_cadence=args.commit_cadence,
-            statuses_arg=args.statuses, hooks_arg=args.hooks,
-            no_git_ops=args.no_git_ops, install_systemd=args.install_systemd,
-            check_interval=args.check_interval, idle_stop_hours=args.idle_stop_hours,
-            server_mode=args.server, dolt_user=args.dolt_user,
-            pass_path=args.pass_path, yes=args.yes,
-            bootstrap=args.bootstrap, sandbox=args.sandbox,
-            prefix=args.prefix, agents_profile=args.agents_profile,
+            path=args.path,
+            days=args.days,
+            commit_cadence=args.commit_cadence,
+            statuses_arg=args.statuses,
+            hooks_arg=args.hooks,
+            no_git_ops=args.no_git_ops,
+            install_systemd=args.install_systemd,
+            check_interval=args.check_interval,
+            idle_stop_hours=args.idle_stop_hours,
+            server_mode=args.server,
+            dolt_user=args.dolt_user,
+            pass_path=args.pass_path,
+            yes=args.yes,
+            bootstrap=args.bootstrap,
+            sandbox=args.sandbox,
+            prefix=args.prefix,
+            agents_profile=args.agents_profile,
             name=args.name,
         )
     elif args.cmd == "config":
         if args.config_action == "init":
             from bd_track.project import cmd_config_init
+
             cmd_config_init(project_dir=args.project_dir)
     elif args.cmd == "idle-stop":
         from bd_track.server import cmd_idle_stop
+
         cmd_idle_stop(args.hours)
     elif args.cmd == "run-service":
         from bd_track.project import cmd_run_service
+
         cmd_run_service()
     elif args.cmd == "servers":
         from bd_track.server import cmd_servers
+
         cmd_servers()
     elif args.cmd == "server-stop":
         from bd_track.server import cmd_server_stop
+
         cmd_server_stop(args.path)
     elif args.cmd == "migrate":
         if args.migrate_action == "rename":
             from bd_track.migrate import cmd_migrate_rename
+
             cmd_migrate_rename(
-                project_dir=args.project_dir, all_repos=args.all_repos,
-                apply=args.apply, backup=args.backup,
+                project_dir=args.project_dir,
+                all_repos=args.all_repos,
+                apply=args.apply,
+                backup=args.backup,
             )
         elif args.migrate_action == "registry":
             from bd_track.migrate import cmd_migrate_registry
+
             cmd_migrate_registry(apply=args.apply)
         elif args.migrate_action == "import":
             from bd_track.migrate import cmd_migrate_import
+
             cmd_migrate_import(
-                project_dir=args.project_dir, from_file=args.from_file,
+                project_dir=args.project_dir,
+                from_file=args.from_file,
                 apply=args.apply,
             )
     elif args.cmd == "queue":
@@ -1015,25 +1300,42 @@ def main() -> None:
     elif args.cmd == "triage":
         if args.triage_action is None:
             from bd_track.triage import cmd_triage_interactive
-            cmd_triage_interactive(inbox=args.inbox, project_dir=args.project_dir,
-                                   dry_run=args.dry_run)
+
+            cmd_triage_interactive(
+                inbox=args.inbox, project_dir=args.project_dir, dry_run=args.dry_run
+            )
         elif args.triage_action == "ask":
             from bd_track.triage import cmd_triage_ask
-            cmd_triage_ask(args.ticket_id, args.question, inbox=args.inbox,
-                           project_dir=args.project_dir, dry_run=args.dry_run)
+
+            cmd_triage_ask(
+                args.ticket_id,
+                args.question,
+                inbox=args.inbox,
+                project_dir=args.project_dir,
+                dry_run=args.dry_run,
+            )
         elif args.triage_action == "list":
             from bd_track.triage import cmd_triage_list
-            cmd_triage_list(inbox=args.inbox, project_dir=args.project_dir,
-                            as_json=args.as_json)
+
+            cmd_triage_list(inbox=args.inbox, project_dir=args.project_dir, as_json=args.as_json)
         elif args.triage_action == "resolve":
             from bd_track.triage import cmd_triage_resolve
-            if (args.title or args.description or args.bead_type
-                    or args.priority is not None) and not args.bead:
+
+            if (
+                args.title or args.description or args.bead_type or args.priority is not None
+            ) and not args.bead:
                 sys.exit("bd-track: --title/--description/--type/--priority need --bead")
             cmd_triage_resolve(
-                args.ticket_id, bead=args.bead, reject=args.reject,
-                duplicate=args.duplicate, done=args.done, title=args.title,
-                description=args.description, bead_type=args.bead_type,
-                priority=args.priority, inbox=args.inbox,
-                project_dir=args.project_dir, dry_run=args.dry_run,
+                args.ticket_id,
+                bead=args.bead,
+                reject=args.reject,
+                duplicate=args.duplicate,
+                done=args.done,
+                title=args.title,
+                description=args.description,
+                bead_type=args.bead_type,
+                priority=args.priority,
+                inbox=args.inbox,
+                project_dir=args.project_dir,
+                dry_run=args.dry_run,
             )

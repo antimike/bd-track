@@ -16,7 +16,8 @@ def test_render_systemd_cleanup_service():
 def test_render_systemd_cleanup_timer():
     out = render(
         "systemd/bd-track-cleanup.timer.tmpl",
-        CHECK_INTERVAL="daily", SERVICE_NAME="bd-track-cleanup",
+        CHECK_INTERVAL="daily",
+        SERVICE_NAME="bd-track-cleanup",
     )
     assert "OnCalendar=daily" in out
     assert "Unit=bd-track-cleanup.service" in out
@@ -25,7 +26,8 @@ def test_render_systemd_cleanup_timer():
 def test_render_systemd_idle_stop_service():
     out = render(
         "systemd/bd-track-idle-stop.service.tmpl",
-        BD_TRACK_PATH="/usr/local/bin/bd-track", IDLE_STOP_HOURS="4",
+        BD_TRACK_PATH="/usr/local/bin/bd-track",
+        IDLE_STOP_HOURS="4",
     )
     assert "/usr/local/bin/bd-track idle-stop --hours 4" in out
 

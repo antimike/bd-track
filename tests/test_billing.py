@@ -21,6 +21,7 @@ def sidecar_file(tmp_path: Path) -> Path:
 # load_sidecar
 # ---------------------------------------------------------------------------
 
+
 def test_load_sidecar_missing_returns_minimal_defaults(sidecar_file):
     data = load_sidecar(sidecar_file)
     assert data == {"default": {}, "patterns": []}
@@ -47,6 +48,7 @@ def test_load_sidecar_full_round_trip(sidecar_file):
 # ---------------------------------------------------------------------------
 # resolve_tuple
 # ---------------------------------------------------------------------------
+
 
 def test_resolve_uses_default_block():
     sidecar = {"default": {"client": "DefaultCo", "svc": "Eng"}, "patterns": []}

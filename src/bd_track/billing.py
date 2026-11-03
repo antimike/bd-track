@@ -26,8 +26,8 @@ def load_sidecar(beads_dir: Path) -> dict:
     path = path_compat(beads_dir / "bd-track.yaml", beads_dir / "bd-timew.yaml")
     if not path.exists():
         root_log.warning(
-            "no sidecar at %s; using minimal defaults. "
-            "Run `bd-track config init` to scaffold one.", path,
+            "no sidecar at %s; using minimal defaults. Run `bd-track config init` to scaffold one.",
+            path,
         )
         return {"default": {}, "patterns": []}
     with path.open() as f:
@@ -75,6 +75,6 @@ def resolve_tuple(labels: list[str], sidecar: dict) -> dict:
             break
     for label in labels:
         if label.startswith("case:"):
-            tuple_["case"] = label[len("case:"):]
+            tuple_["case"] = label[len("case:") :]
             break
     return tuple_

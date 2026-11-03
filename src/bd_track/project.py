@@ -101,7 +101,7 @@ def _ensure_auto_push_disabled(beads_dir: Path) -> None:
 
     # Already disabled in either form? (Crude but the strings are
     # unambiguous in this context — no other config key overlaps.)
-    if "auto-push: false" in content or "auto-push: \"false\"" in content:
+    if "auto-push: false" in content or 'auto-push: "false"' in content:
         return
 
     if content.strip() == "":
@@ -121,6 +121,7 @@ def _ensure_auto_push_disabled(beads_dir: Path) -> None:
 # Repos config helpers
 # ---------------------------------------------------------------------------
 
+
 def _registry_target(project_root: Path, name: str | None) -> tuple[str, object | None]:
     """The registry name to write for ``project_root`` and its existing entry, if any.
 
@@ -138,15 +139,20 @@ def _registry_target(project_root: Path, name: str | None) -> tuple[str, object 
         return existing.name, existing
     chosen = name or project_root.name.lower()
     if not NAME_RE.fullmatch(chosen):
-        sys.exit(f"bd-track: {chosen!r} is not a valid project name "
-                 "([a-z0-9][a-z0-9_-]*); pass --name")
+        sys.exit(
+            f"bd-track: {chosen!r} is not a valid project name ([a-z0-9][a-z0-9_-]*); pass --name"
+        )
     if registry.get(chosen) is not None:
         sys.exit(f"bd-track: project name {chosen!r} is taken by another project; pass --name")
     return chosen, None
 
 
 def _register(
-    project_root: Path, name: str, beads_values: dict, *, prefix: str | None,
+    project_root: Path,
+    name: str,
+    beads_values: dict,
+    *,
+    prefix: str | None,
 ) -> None:
     """Write the project to the registry: identity keys if new, then bd-track's beads keys."""
     from bd_track.registry import RegistryError, origin_remote, set_project
@@ -164,8 +170,9 @@ def _register(
 
 
 def _issue_prefix(project_root: Path) -> str | None:
-    result = run(["bd", "config", "get", "issue_prefix"], check=False, capture=True,
-                 cwd=project_root)
+    result = run(
+        ["bd", "config", "get", "issue_prefix"], check=False, capture=True, cwd=project_root
+    )
     value = result.stdout.strip() if result.returncode == 0 else ""
     return value if value and "not set" not in value else None
 
@@ -205,13 +212,17 @@ def parse_cadence(cadence_str: str) -> dt.timedelta:
     if not m:
         sys.exit(f"bd-track: invalid cadence '{cadence_str}' — use e.g. 1d, 7d, 12h")
     value, unit = int(m.group(1)), m.group(2)
-    return {"d": dt.timedelta(days=value), "h": dt.timedelta(hours=value),
-            "m": dt.timedelta(minutes=value)}[unit]
+    return {
+        "d": dt.timedelta(days=value),
+        "h": dt.timedelta(hours=value),
+        "m": dt.timedelta(minutes=value),
+    }[unit]
 
 
 # ---------------------------------------------------------------------------
 # Server-mode helpers
 # ---------------------------------------------------------------------------
+
 
 def _pass_entry_exists(pass_path: str) -> bool:
     return run(["pass", "show", pass_path], check=False, capture=True).returncode == 0
@@ -255,7 +266,9 @@ def _update_envrc(project_path: Path, pass_path: str) -> None:
 
 
 def _provision_dolt_user(
-    project_root: Path, dolt_user: str, pass_path: str,
+    project_root: Path,
+    dolt_user: str,
+    pass_path: str,
 ) -> None:
     """Create or update the Dolt MySQL user with the password from `pass`.
 
@@ -278,7 +291,8 @@ def _provision_dolt_user(
     pw_result = run(["pass", "show", pass_path], check=False, capture=True)
     if pw_result.returncode != 0:
         root_log.warning(
-            "pass show %s failed; skipping Dolt user provisioning.", pass_path,
+            "pass show %s failed; skipping Dolt user provisioning.",
+            pass_path,
         )
         return
     password = pw_result.stdout.split("\n", 1)[0]
@@ -312,21 +326,27 @@ def _provision_dolt_user(
 
     proc = subprocess.run(
         ["mysql", "-h", host, "-P", port, "-u", "root", "--protocol=TCP"],
-        input=sql, text=True, capture_output=True, check=False,
+        input=sql,
+        text=True,
+        capture_output=True,
+        check=False,
     )
     if proc.returncode != 0:
         root_log.warning(
             "Dolt user provisioning failed (mysql exit %d): %s",
-            proc.returncode, proc.stderr.strip(),
+            proc.returncode,
+            proc.stderr.strip(),
         )
         return
-    root_log.info("Dolt user %s provisioned on %s:%s (localhost, 127.0.0.1, %%)",
-                  dolt_user, host, port)
+    root_log.info(
+        "Dolt user %s provisioned on %s:%s (localhost, 127.0.0.1, %%)", dolt_user, host, port
+    )
 
 
 # ---------------------------------------------------------------------------
 # init-project
 # ---------------------------------------------------------------------------
+
 
 def cmd_init_project(
     path: Path | None,
@@ -388,7 +408,8 @@ def cmd_init_project(
         root_log.info("Project already registered as %r: %s", registry_name, project_path)
         if not confirm(
             "Re-apply all init-project settings to this project?",
-            default=True, yes=yes,
+            default=True,
+            yes=yes,
         ):
             root_log.info("Aborted.")
             return
@@ -411,15 +432,17 @@ def cmd_init_project(
     else:
         raw_statuses = prompt(
             "Custom statuses to enable (comma-separated, blank for none)",
-            default_statuses_str, yes=yes,
+            default_statuses_str,
+            yes=yes,
         )
     effective_statuses = [s.strip() for s in raw_statuses.split(",") if s.strip()]
 
     if hooks_arg is not None:
         effective_hooks: bool = hooks_arg
     else:
-        effective_hooks = confirm("Run  bd hooks install  to install git hook shims?",
-                                  default=True, yes=yes)
+        effective_hooks = confirm(
+            "Run  bd hooks install  to install git hook shims?", default=True, yes=yes
+        )
 
     dolt_available = bool(shutil.which("dolt"))
     if server_mode is not None:
@@ -430,7 +453,8 @@ def cmd_init_project(
     else:
         effective_server = confirm(
             "Configure Dolt server mode (.envrc + pass credential)?",
-            default=True, yes=yes,
+            default=True,
+            yes=yes,
         )
 
     if idle_stop_hours is not None:
@@ -455,7 +479,9 @@ def cmd_init_project(
     for key, value in settings:
         result = run(
             ["bd", "config", "set", key, value],
-            check=False, capture=True, cwd=project_root,
+            check=False,
+            capture=True,
+            cwd=project_root,
         )
         if result.returncode != 0:
             root_log.warning("config set %s=%s failed: %s", key, value, result.stderr.strip())
@@ -472,20 +498,21 @@ def cmd_init_project(
     effective_pass_path: str | None = pass_path
     if effective_server:
         if not dolt_available:
-            root_log.warning(
-                "--server requested but dolt binary not found; skipping server wiring"
-            )
+            root_log.warning("--server requested but dolt binary not found; skipping server wiring")
             effective_server = False
         else:
             effective_user = dolt_user or project_root.name.lower()
             result = run(
                 ["bd", "dolt", "set", "user", effective_user],
-                check=False, capture=True, cwd=project_root,
+                check=False,
+                capture=True,
+                cwd=project_root,
             )
             if result.returncode != 0:
                 root_log.warning(
                     "bd dolt set user %s failed: %s",
-                    effective_user, result.stderr.strip(),
+                    effective_user,
+                    result.stderr.strip(),
                 )
             else:
                 root_log.info("Dolt user set to %s", effective_user)
@@ -500,7 +527,8 @@ def cmd_init_project(
                     default_suggestion = f"beads/{project_root.name.lower()}"
                     effective_pass_path = prompt(
                         "pass store path for Dolt password",
-                        default_suggestion, yes=yes,
+                        default_suggestion,
+                        yes=yes,
                     )
                 _provision_pass_entry(effective_pass_path, yes=yes)
                 _update_envrc(project_root, effective_pass_path)
@@ -535,7 +563,8 @@ def cmd_init_project(
             root_log.warning(
                 "check_interval '%s' is coarser than commit_cadence '%s' — "
                 "commits for this project may be delayed",
-                global_interval, effective_cadence,
+                global_interval,
+                effective_cadence,
             )
     except SystemExit:
         pass
@@ -568,11 +597,13 @@ def _install_systemd_units(check_interval: str, idle_stop_hours: int) -> None:
     )
     if not cleanup_timer.exists():
         _set_host_or_warn({"check_interval": check_interval})
-        cleanup_timer.write_text(render(
-            "systemd/bd-track-cleanup.timer.tmpl",
-            CHECK_INTERVAL=check_interval,
-            SERVICE_NAME=SYSTEMD_CLEANUP_NAME,
-        ))
+        cleanup_timer.write_text(
+            render(
+                "systemd/bd-track-cleanup.timer.tmpl",
+                CHECK_INTERVAL=check_interval,
+                SERVICE_NAME=SYSTEMD_CLEANUP_NAME,
+            )
+        )
         root_log.info("Wrote %s", cleanup_timer)
     else:
         root_log.info("Cleanup timer already exists, skipping: %s", cleanup_timer)
@@ -606,7 +637,8 @@ def _install_systemd_units(check_interval: str, idle_stop_hours: int) -> None:
 
     result = run(
         ["systemctl", "--user", "enable", "--now", *units_to_enable],
-        check=False, capture=True,
+        check=False,
+        capture=True,
     )
     if result.returncode != 0:
         root_log.error("enable --now failed: %s", result.stderr.strip())
@@ -618,6 +650,7 @@ def _install_systemd_units(check_interval: str, idle_stop_hours: int) -> None:
 # ---------------------------------------------------------------------------
 # cleanup
 # ---------------------------------------------------------------------------
+
 
 def _registry_context(project, project_root: Path, log) -> tuple[object, dict] | None:
     """``(registry entry, host settings)`` for the export and push phases, or ``None``."""
@@ -666,7 +699,9 @@ def _export_issues(target: tuple[Path, Path], project_root: Path, log) -> None:
     tmp = dest.with_name(f".{dest.name}.tmp")
     result = run(
         ["bd", "export", "--include-memories", "-o", str(tmp)],
-        check=False, capture=True, cwd=project_root,
+        check=False,
+        capture=True,
+        cwd=project_root,
     )
     if result.returncode != 0:
         tmp.unlink(missing_ok=True)
@@ -740,9 +775,7 @@ def cmd_cleanup(
 
     if commit:
         log.info("Phase 1/5: dolt commit")
-        result = run(
-            ["bd", "dolt", "commit"], check=False, capture=True, cwd=project_root
-        )
+        result = run(["bd", "dolt", "commit"], check=False, capture=True, cwd=project_root)
         if result.returncode != 0:
             log.warning("dolt commit: %s", result.stderr.strip() or result.stdout.strip())
         else:
@@ -753,7 +786,9 @@ def cmd_cleanup(
     log.info("Phase 2/5: compact --days %d", days)
     result = run(
         ["bd", "compact", f"--days={days}", "--force"],
-        check=False, capture=True, cwd=project_root,
+        check=False,
+        capture=True,
+        cwd=project_root,
     )
     if result.returncode != 0:
         log.error("compact failed: %s", result.stderr.strip())
@@ -763,7 +798,9 @@ def cmd_cleanup(
     log.info("Phase 3/5: gc")
     result = run(
         ["bd", "gc", "--skip-decay", "--force"],
-        check=False, capture=True, cwd=project_root,
+        check=False,
+        capture=True,
+        cwd=project_root,
     )
     if result.returncode != 0:
         log.error("gc failed: %s", result.stderr.strip())
@@ -784,7 +821,8 @@ def cmd_cleanup(
 
                 _export_sessions(
                     log_dirs(project_root, beads_dir),
-                    state_sessions_dir(project, host, target[1]), log,
+                    state_sessions_dir(project, host, target[1]),
+                    log,
                 )
         push_project(project, project_root, host, log, pushed)
 
@@ -794,6 +832,7 @@ def cmd_cleanup(
 # ---------------------------------------------------------------------------
 # run-service (systemd cleanup entrypoint)
 # ---------------------------------------------------------------------------
+
 
 def cmd_run_service() -> None:
     """Iterate registered beads projects and run cleanup when due per project cadence."""
@@ -822,7 +861,8 @@ def cmd_run_service() -> None:
         if now - last_run < cadence:
             cleanup_log.info(
                 "%s: next cleanup in %s, skipping",
-                path, cadence - (now - last_run),
+                path,
+                cadence - (now - last_run),
             )
             continue
 
@@ -844,6 +884,7 @@ def cmd_run_service() -> None:
 # ---------------------------------------------------------------------------
 # config init (per-project sidecar scaffold)
 # ---------------------------------------------------------------------------
+
 
 def cmd_config_init(project_dir: Path | None = None) -> None:
     """Scaffold a per-project .beads/bd-track.yaml from the packaged template.

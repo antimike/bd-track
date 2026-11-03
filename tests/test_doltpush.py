@@ -117,7 +117,8 @@ def test_resolve_host_applies_git_insteadof(tmp_path: Path, monkeypatch, ssh_ali
 def test_ssh_hostname_reads_ssh_G(monkeypatch):
     out = "user me\nhostname github.com\nport 22\n"
     monkeypatch.setattr(
-        doltpush.subprocess, "run",
+        doltpush.subprocess,
+        "run",
         lambda argv, **kw: subprocess.CompletedProcess(argv, 0, stdout=out, stderr=""),
     )
     assert doltpush._ssh_hostname("me.github.com") == "github.com"
@@ -162,8 +163,12 @@ def _http_error(code: int) -> urllib.error.HTTPError:
 
 @pytest.mark.parametrize(
     "outcome, expected",
-    [(None, True), (_http_error(404), False), (_http_error(403), PushSkipped),
-     (urllib.error.URLError("down"), PushSkipped)],
+    [
+        (None, True),
+        (_http_error(404), False),
+        (_http_error(403), PushSkipped),
+        (urllib.error.URLError("down"), PushSkipped),
+    ],
 )
 def test_github_is_public(monkeypatch, outcome, expected):
     def fake_urlopen(request, timeout):
@@ -211,15 +216,19 @@ def stubbed(monkeypatch, tmp_path: Path):
     calls = []
     monkeypatch.setattr(doltpush, "check_remote", lambda url, p, root: calls.append("guard"))
     monkeypatch.setattr(
-        doltpush, "open_database",
+        doltpush,
+        "open_database",
         lambda root: doltpush.Database("amo", f"embedded:{root}", root, root),
     )
     monkeypatch.setattr(
         doltpush, "ensure_remote", lambda db, url, ref, log: calls.append(("remote", url, ref))
     )
     monkeypatch.setattr(
-        doltpush, "run_push", lambda root, timeout, argv=doltpush.PUSH_ARGV:
-        calls.append(("push", timeout)) or PushResult(True, 0.1, "ok"),
+        doltpush,
+        "run_push",
+        lambda root, timeout, argv=doltpush.PUSH_ARGV: (
+            calls.append(("push", timeout)) or PushResult(True, 0.1, "ok")
+        ),
     )
     return calls
 
@@ -273,12 +282,16 @@ def test_push_timeout_in_server_mode_kills_server_query(tmp_path: Path, stubbed,
             return [{"id": "42"}] if "processlist" in query else []
 
     monkeypatch.setattr(
-        doltpush, "open_database", lambda root: FakeServerDB("beads_global", "server:g", root),
+        doltpush,
+        "open_database",
+        lambda root: FakeServerDB("beads_global", "server:g", root),
     )
     monkeypatch.setattr(
-        doltpush, "run_push",
-        lambda root, timeout, argv=doltpush.PUSH_ARGV:
-        PushResult(False, 120, "timed out after 120s"),
+        doltpush,
+        "run_push",
+        lambda root, timeout, argv=doltpush.PUSH_ARGV: PushResult(
+            False, 120, "timed out after 120s"
+        ),
     )
     project = Project("amo", beads={"prefix": "amo"})
     doltpush.push_project(project, tmp_path, {**HOST, "dolt_remote_url": "/srv/b.git"}, log)
@@ -300,16 +313,24 @@ def _fake_run(outputs: dict[str, str], seen: list):
         seen.append((argv, cwd))
         out = next((v for k, v in outputs.items() if k in argv[-1]), "")
         return subprocess.CompletedProcess(argv, 0, stdout=out, stderr="")
+
     return fake
 
 
 def test_open_database_server_mode_uses_bd_sql(tmp_path: Path, monkeypatch):
     seen = []
-    monkeypatch.setattr(doltpush.subprocess, "run", _fake_run({
-        "database()": "db\nbeads_global\n",
-        "dolt_remotes": 'name,url,params\nbd-track-backup,git+file:///b.git,'
-                        '"{""git_ref"": ""refs/dolt/beads_global""}"\n',
-    }, seen))
+    monkeypatch.setattr(
+        doltpush.subprocess,
+        "run",
+        _fake_run(
+            {
+                "database()": "db\nbeads_global\n",
+                "dolt_remotes": "name,url,params\nbd-track-backup,git+file:///b.git,"
+                '"{""git_ref"": ""refs/dolt/beads_global""}"\n',
+            },
+            seen,
+        ),
+    )
     db = doltpush.open_database(tmp_path)  # no embeddeddolt directory
     assert (db.name, db.key, db.server) == ("beads_global", "server:beads_global", True)
     assert doltpush.remotes(db) == {
@@ -326,12 +347,29 @@ def test_open_database_server_mode_uses_bd_sql(tmp_path: Path, monkeypatch):
 def _bare_repo(path: Path) -> Path:
     subprocess.run(["git", "init", "-q", "--bare", str(path)], check=True)
     seed = path.parent / "seed"
-    subprocess.run(["git", "clone", "-q", str(path), str(seed)], check=True,
-                   capture_output=True)
-    subprocess.run(["git", "-C", str(seed), "-c", "user.name=t", "-c", "user.email=t@t",
-                    "commit", "-q", "--allow-empty", "-m", "init"], check=True)
-    subprocess.run(["git", "-C", str(seed), "push", "-q", "origin", "HEAD:main"], check=True,
-                   capture_output=True)
+    subprocess.run(["git", "clone", "-q", str(path), str(seed)], check=True, capture_output=True)
+    subprocess.run(
+        [
+            "git",
+            "-C",
+            str(seed),
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-q",
+            "--allow-empty",
+            "-m",
+            "init",
+        ],
+        check=True,
+    )
+    subprocess.run(
+        ["git", "-C", str(seed), "push", "-q", "origin", "HEAD:main"],
+        check=True,
+        capture_output=True,
+    )
     return path
 
 
@@ -340,22 +378,31 @@ def test_push_end_to_end(tmp_path: Path):
     remote = _bare_repo(tmp_path / "backup.git")
     root = tmp_path / "proj"
     root.mkdir()
-    subprocess.run(["bd", "init", "--prefix", "e2e", "--quiet"], cwd=root, check=True,
-                   capture_output=True)
+    subprocess.run(
+        ["bd", "init", "--prefix", "e2e", "--quiet"], cwd=root, check=True, capture_output=True
+    )
     project = Project("proj", path=root, beads={"prefix": "e2e"})
     host = {**HOST, "dolt_remote_url": str(remote)}
 
     assert doltpush.push_project(project, root, host, log).ok
     assert doltpush.push_project(project, root, host, log).ok  # remote reused
-    refs = subprocess.run(["git", "-C", str(remote), "for-each-ref", "--format=%(refname)"],
-                          check=True, text=True, capture_output=True).stdout.split()
+    refs = subprocess.run(
+        ["git", "-C", str(remote), "for-each-ref", "--format=%(refname)"],
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.split()
 
     db = doltpush.open_database(root)
     assert not db.server and f"refs/dolt/h1/{db.name}" in refs
     # a second host pushes the same database name beside the first, not over it (q9o.2)
     assert doltpush.push_project(project, root, {**host, "host_name": "h2"}, log).ok
-    refs = subprocess.run(["git", "-C", str(remote), "for-each-ref", "--format=%(refname)"],
-                          check=True, text=True, capture_output=True).stdout.split()
+    refs = subprocess.run(
+        ["git", "-C", str(remote), "for-each-ref", "--format=%(refname)"],
+        check=True,
+        text=True,
+        capture_output=True,
+    ).stdout.split()
     assert {f"refs/dolt/h1/{db.name}", f"refs/dolt/h2/{db.name}"} <= set(refs)
     doltpush.ensure_remote(db, str(remote), "refs/dolt/other", log)  # re-point
     assert doltpush.remotes(db)[doltpush.REMOTE_NAME][1] == "refs/dolt/other"
@@ -446,8 +493,9 @@ def test_timing_log_unwritable_is_ignored(tmp_path: Path):
     blocker = tmp_path / "file"
     blocker.write_text("")
     db = doltpush.Database("d", "k", tmp_path)
-    doltpush.record_push(Project("p"), db, "u", PushResult(True, 1, "ok"),
-                         log_path=blocker / "dolt-push.jsonl")  # parent is a file: no raise
+    doltpush.record_push(
+        Project("p"), db, "u", PushResult(True, 1, "ok"), log_path=blocker / "dolt-push.jsonl"
+    )  # parent is a file: no raise
 
 
 # ---------------------------------------------------------------------------

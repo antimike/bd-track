@@ -60,8 +60,14 @@ NAME_RE = re.compile(r"[a-z0-9][a-z0-9_-]*")
 
 # beads.* keys bd-track owns; ``prefix`` is shared (see the ownership table in the schema doc).
 BD_TRACK_BEADS_KEYS = (
-    "commit_cadence", "compact_days", "statuses", "dolt_push", "dolt_remote_url",
-    "dolt_remote_private", "state_repo", "server",
+    "commit_cadence",
+    "compact_days",
+    "statuses",
+    "dolt_push",
+    "dolt_remote_url",
+    "dolt_remote_private",
+    "state_repo",
+    "server",
 )
 SHARED_KEYS = ("remote", "path")
 
@@ -258,7 +264,9 @@ def _parse_projects(data: dict, source: Path) -> dict[str, Project]:
         if spec and remote is None:
             root_log.warning(
                 "%s: project %r: remote %r is not a git URL or owner/repo; ignored",
-                source, name, spec,
+                source,
+                name,
+                spec,
             )
             spec = None
         projects[name] = Project(
@@ -528,8 +536,11 @@ def is_ref_component(name: object) -> bool:
     """Whether ``name`` is valid as one ``/``-free component of a git ref name
     (``git check-ref-format`` rules)."""
     return (
-        isinstance(name, str) and bool(name) and name != "@"
-        and not name.startswith(".") and not name.endswith((".", ".lock"))
+        isinstance(name, str)
+        and bool(name)
+        and name != "@"
+        and not name.startswith(".")
+        and not name.endswith((".", ".lock"))
         and not _REF_BAD.search(name)
     )
 
@@ -697,9 +708,18 @@ def set_project(name: str, values: dict, explicit: Path | None = None) -> Path:
 
 
 HOST_KEYS = (
-    "check_interval", "idle_stop_hours", "dolt_push", "defaults", "scan_roots",
-    "dolt_remote_url", "dolt_push_timeout", "state_export", "state_repo", "state_layout",
-    "host_name", "default_url_prefix",
+    "check_interval",
+    "idle_stop_hours",
+    "dolt_push",
+    "defaults",
+    "scan_roots",
+    "dolt_remote_url",
+    "dolt_push_timeout",
+    "state_export",
+    "state_repo",
+    "state_layout",
+    "host_name",
+    "default_url_prefix",
 )
 
 
