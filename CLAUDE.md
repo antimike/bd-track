@@ -52,13 +52,14 @@ bd close <id>         # Complete work
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+just test      # uv run pytest -q
+just lint      # ruff check + ruff format --check (pre-commit and CI enforce this)
+just fmt       # apply ruff format + safe lint fixes
 ```
+
+Use `uv run ruff`, never a system `ruff` (version differs from `uv.lock`). Setup and
+enforcement: [docs/development.md](docs/development.md).
 
 ## Architecture Overview
 
