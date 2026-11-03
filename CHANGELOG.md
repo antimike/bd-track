@@ -6,6 +6,12 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Session event logs in the state export** (`bd-timew-q9o.1`): `cleanup`'s state export
+  copies each project's session logs (billing data, gitignored and outside the Dolt
+  database) into `sessions/` beside the issues file, new or grown files only.
+
 ## [0.7.0] - 2026-10-30
 
 ### Added

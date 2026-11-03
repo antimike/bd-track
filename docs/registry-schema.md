@@ -216,6 +216,14 @@ private git repo that another tool commits and pushes; bd-track never runs git i
   `projects/{project}/beads/issues.jsonl`.
 - The export holds the project's issues and its `bd remember` memories (`bd export
   --include-memories`); `bd import` of the file restores both.
+- The export also copies the project's session event logs (`*.jsonl`, the billing data) into
+  `sessions/` beside the issues file: `<beads>/bd-track/sessions/` and the
+  `~/.local/share/bd-track/<project-id>/sessions/` fallback dir. They are gitignored and outside
+  the Dolt database, so neither `bd export` nor the Dolt push carries them. When the layout's
+  directory is shared by all projects (`{project}` only in the file name, e.g.
+  `beads/{project}.jsonl`), they go to `sessions/<project>/` there instead. The logs are
+  append-only, so only new or grown files are copied (each atomically); a backup copy larger
+  than its source is kept, with a warning.
 - The repo directory must exist (bd-track does not create repos); the project's subdirectory
   is created. The file is replaced atomically, and a failed export keeps the previous file.
 - Export on with no repo known, a missing repo, or a failed export is logged; it never stops the
@@ -300,3 +308,4 @@ implement.
 | 2026-11-01 | State export: `global.state_export` is a four-valued switch like `dolt_push`; `beads.state_repo` is `true`/`false` or a path (on, and that repo); `global.state_repo` is the default repo and `global.state_layout` a `{project}` template, default `{project}/issues.jsonl` (`bd-timew-ayn.2`, MH). |
 | 2026-11-02 | Dolt push: bd-track provisions a `bd-track-backup` remote through SQL from `dolt_remote_url` (project, else host) under `refs/dolt/<database>`, in embedded and server modes, one push per database per run; the guard resolves the real host (`git ls-remote --get-url`, `ssh -G`), refuses code remotes and public GitHub repos (API check), and other hosts unless `beads.dolt_remote_private: true`; `global.dolt_push_timeout` (default 120 s) kills a stalled push, server-side too (`bd-timew-ayn.3`, MH). |
 | 2026-11-02 | The state export includes `bd remember` memories (`--include-memories`), with no setting: a backup that drops them loses data that exists only in `.beads/` (`bd-timew-ayn.2`, MH). |
+| 2026-11-02 | The state export copies session event logs to `sessions/` beside the issues file (`sessions/<project>/` for a flat layout), new or grown files only, with no setting: they are billing data outside every other backup (`bd-timew-q9o.1`). |

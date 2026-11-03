@@ -56,6 +56,8 @@ Per-session logs live under the Beads directory at
 `~/.config|cache|state/bd-track`. When a `bd-track` path is absent, the legacy
 `bd-timew` location is read as a fallback, so existing data keeps resolving until
 you run `bd-track migrate rename`.
+The logs are gitignored and outside the Dolt database; `cleanup`'s state export backs them up
+(see [registry-schema.md](docs/registry-schema.md#state-export)).
 
 ## Install
 
