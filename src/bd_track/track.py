@@ -9,6 +9,10 @@ it can see, and ``start``/``stop`` touch only the caller's own session.
 Single-active-per-session: ``start`` first stops the calling session's own open
 interval(s), preserving the timew muscle-memory ("starting a new thing ends the
 old one") without ever reaching across sessions — the property timew lacked.
+
+``pause --all`` / ``resume --all`` are the deliberate exception: idle and sleep
+hooks run outside any session, so they stop and reopen other sessions'
+intervals, writing each event into that interval's own session log.
 """
 
 from __future__ import annotations
@@ -22,6 +26,7 @@ from bd_track.aggregate import (
     Interval,
     load_intervals,
     open_intervals,
+    paused_intervals,
     report,
 )
 from bd_track.billing import get_issue, load_sidecar, resolve_tuple
@@ -110,6 +115,39 @@ def _session_open(
     return opens
 
 
+def _session_paused(
+    session_id: str,
+    project_root: Path,
+    *,
+    bead: str | None = None,
+) -> list[Interval]:
+    """This session's interval awaiting ``resume`` (at most one; optionally for one bead)."""
+    return [
+        iv
+        for iv in paused_intervals(load_intervals(log_dir(project_root)))
+        if iv.session == session_id and (bead is None or iv.bead == bead)
+    ]
+
+
+def _caller_session(root: Path, session_id: str | None) -> str | None:
+    """The caller's session id in ``root``, or None when it cannot be resolved."""
+    try:
+        return resolve_session_id(root, explicit=session_id)
+    except SystemExit:
+        return None
+
+
+def _select(
+    ivs: list[Interval], *, beads: list[str], all_sessions: bool, sid: str | None
+) -> list[Interval]:
+    """Filter pause/resume candidates by session scope and bead ids."""
+    if not all_sessions:
+        ivs = [iv for iv in ivs if sid is not None and iv.session == sid]
+    if beads:
+        ivs = [iv for iv in ivs if iv.bead in beads]
+    return ivs
+
+
 # ---------------------------------------------------------------------------
 # start / stop / switch
 # ---------------------------------------------------------------------------
@@ -196,8 +234,13 @@ def cmd_stop(
 
     opens = _session_open(sid, project_root, bead=issue_id)
     if not opens:
-        scope = f" for {issue_id}" if issue_id else ""
-        root_log.info("no active interval%s in this session (%s)", scope, sid)
+        paused = _session_paused(sid, project_root, bead=issue_id)
+        for iv in paused:
+            correct_interval(iv.interval, session_id=sid, paused=False, project_dir=project_root)
+            root_log.info("Cleared pause on %s  %s", iv.bead or "(no bead)", iv.interval[:8])
+        if not paused:
+            scope = f" for {issue_id}" if issue_id else ""
+            root_log.info("no active interval%s in this session (%s)", scope, sid)
     for iv in opens:
         if at_dt is not None and iv.start is not None:
             start_dt = dt.datetime.fromisoformat(iv.start)
@@ -231,6 +274,90 @@ def cmd_switch(
     """Stop the current interval and start one on ``issue_id`` (composition)."""
     cmd_stop(from_issue_id, clean=False, session_id=session_id)
     cmd_start(issue_id, session_id=session_id)
+
+
+# ---------------------------------------------------------------------------
+# pause / resume
+# ---------------------------------------------------------------------------
+
+
+def cmd_pause(
+    beads: list[str] | None = None,
+    *,
+    all_sessions: bool = False,
+    dry_run: bool = False,
+    session_id: str | None = None,
+    project_dir: Path | None = None,
+    global_scope: bool = False,
+) -> None:
+    """Stop open intervals with ``paused: true`` so ``resume`` can reopen them.
+
+    Default scope is this session; ``all_sessions`` widens it to every session
+    (the idle/sleep-hook form), ``beads`` narrows it. Nothing to pause is not an
+    error: hooks call this blindly.
+    """
+    count = 0
+    for root in _project_roots(project_dir, global_scope):
+        sid = _caller_session(root, session_id)
+        opens = open_intervals(load_intervals(log_dir(root)))
+        for iv in _select(opens, beads=beads or [], all_sessions=all_sessions, sid=sid):
+            count += 1
+            if not dry_run:
+                stop_interval(iv.interval, session_id=iv.session, paused=True, project_dir=root)
+            root_log.info(
+                "%s %s  %s  (%s)  [session %s]",
+                "Would pause" if dry_run else "Paused",
+                iv.bead or "(no bead)",
+                iv.interval[:8],
+                _elapsed(iv.start),
+                iv.session,
+            )
+    if not count:
+        root_log.info("nothing to pause: no matching open interval")
+
+
+def cmd_resume(
+    beads: list[str] | None = None,
+    *,
+    all_sessions: bool = False,
+    dry_run: bool = False,
+    session_id: str | None = None,
+    project_dir: Path | None = None,
+    global_scope: bool = False,
+) -> None:
+    """Open a new interval for each paused one, same session, bead, tags and provenance.
+
+    Scope as for ``cmd_pause``. The bead is not re-claimed and the tuple is not
+    re-resolved: the resumed interval continues the paused one.
+    """
+    count = 0
+    for root in _project_roots(project_dir, global_scope):
+        sid = _caller_session(root, session_id)
+        paused = paused_intervals(load_intervals(log_dir(root)))
+        for iv in _select(paused, beads=beads or [], all_sessions=all_sessions, sid=sid):
+            count += 1
+            new = "-"
+            if not dry_run:
+                new = start_interval(
+                    iv.bead,
+                    iv.tags,
+                    session_id=iv.session,
+                    group_id=iv.group_id,
+                    actor=iv.actor,
+                    role=iv.role,
+                    resumed_from=iv.interval,
+                    project_dir=root,
+                )[:8]
+            root_log.info(
+                "%s %s  %s -> %s  [session %s]",
+                "Would resume" if dry_run else "Resumed",
+                iv.bead or "(no bead)",
+                iv.interval[:8],
+                new,
+                iv.session,
+            )
+    if not count:
+        root_log.info("nothing to resume: no matching paused interval")
 
 
 # ---------------------------------------------------------------------------
@@ -711,6 +838,12 @@ def cmd_status(*, session_id: str | None = None) -> None:
 
     if not mine:
         root_log.info("no active interval in this session (%s)", sid)
+        for iv in _session_paused(sid, project_root):
+            root_log.info(
+                "Paused:   %s  (since %s ago; `bd-track resume` to reopen)",
+                iv.bead or "(no bead)",
+                _elapsed(iv.stop),
+            )
         others = len({iv.session for iv in all_open})
         if others:
             root_log.info(
@@ -743,28 +876,69 @@ def cmd_status(*, session_id: str | None = None) -> None:
         )
 
 
+def _bead_title(bead: str | None, root: Path) -> str:
+    """Bead title for display, or "" when the bead cannot be shown."""
+    if not bead:
+        return ""
+    try:
+        return get_issue(bead, cwd=root).get("title", "")
+    except SystemExit:
+        return ""
+
+
 def cmd_active(
-    *, session_id: str | None = None, project_dir: Path | None = None, global_scope: bool = False
+    *,
+    fmt: str = "table",
+    session_id: str | None = None,
+    project_dir: Path | None = None,
+    global_scope: bool = False,
 ) -> None:
-    """Show ALL open intervals across ALL sessions (the multi-active view)."""
+    """Show ALL open and paused intervals across ALL sessions (the multi-active view).
+
+    ``fmt="json"`` prints one object per interval to stdout, with ``state``
+    (open|paused), project, bead and title: the input for a pause/resume picker.
+    """
     roots = _project_roots(project_dir, global_scope)
     # Resolve the caller's session id from the first available root; fall back
     # to None (no '*' marker) if the root has no local beads workspace.
-    sid: str | None = None
-    try:
-        sid = resolve_session_id(roots[0], explicit=session_id)
-    except SystemExit:
-        pass
+    sid = _caller_session(roots[0], session_id)
 
-    all_open: list[Interval] = []
+    rows: list[tuple[str, Path, Interval]] = []
     for root in roots:
-        all_open.extend(open_intervals(load_intervals(log_dir(root))))
-    opens = sorted(all_open, key=lambda iv: iv.start or "")
+        ivs = load_intervals(log_dir(root))
+        rows.extend(("open", root, iv) for iv in open_intervals(ivs))
+        rows.extend(("paused", root, iv) for iv in paused_intervals(ivs))
+    rows.sort(key=lambda r: (r[0], r[2].start or ""))
 
+    if fmt == "json":
+        import json
+
+        print(
+            json.dumps(
+                [
+                    {
+                        "state": state,
+                        "project": str(root),
+                        "session": iv.session,
+                        "bead": iv.bead,
+                        "title": _bead_title(iv.bead, root),
+                        "interval": iv.interval,
+                        "since": iv.start if state == "open" else iv.stop,
+                        "tags": iv.tags,
+                    }
+                    for state, root, iv in rows
+                ],
+                ensure_ascii=False,
+            )
+        )
+        return
+
+    opens = [iv for state, _, iv in rows if state == "open"]
+    paused = [iv for state, _, iv in rows if state == "paused"]
     if not opens:
         root_log.info("no active intervals in any session")
-        return
-    root_log.info("%d active interval(s):", len(opens))
+    else:
+        root_log.info("%d active interval(s):", len(opens))
     for iv in opens:
         marker = "*" if (sid and iv.session == sid) else " "
         tuple_ = _tuple_from_tags(iv.tags)
@@ -776,6 +950,17 @@ def cmd_active(
             iv.bead or "(no bead)",
             _elapsed(iv.start),
             tup,
+        )
+    if paused:
+        root_log.info("%d paused interval(s) (`bd-track resume`):", len(paused))
+    for iv in paused:
+        marker = "*" if (sid and iv.session == sid) else " "
+        root_log.info(
+            "%s %-20s %-14s paused %s ago",
+            marker,
+            iv.session or "?",
+            iv.bead or "(no bead)",
+            _elapsed(iv.stop),
         )
 
 

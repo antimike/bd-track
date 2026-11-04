@@ -38,7 +38,7 @@ def _issue(monkeypatch, *, status="open", title="t"):
     monkeypatch.setattr(
         track,
         "get_issue",
-        lambda iid: {"id": iid, "title": title, "labels": [], "status": status},
+        lambda iid, **k: {"id": iid, "title": title, "labels": [], "status": status},
     )
 
 
@@ -215,3 +215,135 @@ def test_report_totals_closed_intervals(proj, monkeypatch, caplog):
     with caplog.at_level(logging.INFO, logger="bd-track"):
         track.cmd_report(group_by="bead", policy_name="billing", session_id="s1")
     assert "bead-1" in caplog.text and "TOTAL" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# pause / resume (bd-timew-11e)
+# ---------------------------------------------------------------------------
+
+
+def _paused(bdir, session=None):
+    from bd_track.aggregate import paused_intervals
+
+    return [
+        iv for iv in paused_intervals(_intervals(bdir)) if session is None or iv.session == session
+    ]
+
+
+def test_pause_defaults_to_own_session(proj, monkeypatch):
+    _issue(monkeypatch)
+    _claims(monkeypatch)
+    track.cmd_start("bead-A", session_id="s1")
+    track.cmd_start("bead-B", session_id="s2")
+    track.cmd_pause(session_id="s1")
+    assert _open(proj, "s1") == [] and len(_open(proj, "s2")) == 1
+    assert [iv.bead for iv in _paused(proj)] == ["bead-A"]
+
+
+def test_pause_all_then_resume_all_restores_same_set(proj, monkeypatch):
+    _issue(monkeypatch)
+    _claims(monkeypatch)
+    track.cmd_start("bead-A", session_id="s1")
+    track.cmd_start("bead-B", session_id="s2")
+    before = {iv.session: iv for iv in _open(proj)}
+    track.cmd_pause(all_sessions=True)
+    assert _open(proj) == [] and len(_paused(proj)) == 2
+
+    track.cmd_resume(all_sessions=True)
+    after = {iv.session: iv for iv in _open(proj)}
+    assert _paused(proj) == []
+    for sess in ("s1", "s2"):
+        old, new = before[sess], after[sess]
+        assert new.interval != old.interval
+        assert (new.bead, new.tags, new.actor) == (old.bead, old.tags, old.actor)
+        assert new.resumed_from == old.interval
+
+
+def test_pause_and_resume_are_idempotent(proj, monkeypatch, caplog):
+    import logging
+
+    _issue(monkeypatch)
+    _claims(monkeypatch)
+    track.cmd_start("bead-A", session_id="s1")
+    with caplog.at_level(logging.INFO, logger="bd-track"):
+        track.cmd_pause(all_sessions=True)
+        track.cmd_pause(all_sessions=True)
+        track.cmd_resume(all_sessions=True)
+        track.cmd_resume(all_sessions=True)
+    assert "nothing to pause" in caplog.text and "nothing to resume" in caplog.text
+    assert len(_open(proj, "s1")) == 1
+    # one stop (paused) + one resumed start; the repeats appended nothing
+    assert len(_intervals(proj)) == 2
+
+
+def test_pause_resume_bead_filter(proj, monkeypatch):
+    _issue(monkeypatch)
+    _claims(monkeypatch)
+    track.cmd_start("bead-A", session_id="s1")
+    track.cmd_start("bead-B", session_id="s2")
+    track.cmd_pause(["bead-B"], all_sessions=True)
+    assert [iv.bead for iv in _open(proj)] == ["bead-A"]
+    track.cmd_pause(all_sessions=True)
+    track.cmd_resume(["bead-A"], all_sessions=True)
+    assert [iv.bead for iv in _open(proj)] == ["bead-A"]
+    assert [iv.bead for iv in _paused(proj)] == ["bead-B"]
+
+
+def test_pause_dry_run_writes_nothing(proj, monkeypatch):
+    _issue(monkeypatch)
+    _claims(monkeypatch)
+    track.cmd_start("bead-A", session_id="s1")
+    track.cmd_pause(all_sessions=True, dry_run=True)
+    assert len(_open(proj, "s1")) == 1
+
+
+def test_stop_clears_pause(proj, monkeypatch, caplog):
+    import logging
+
+    _issue(monkeypatch)
+    _claims(monkeypatch)
+    track.cmd_start("bead-A", session_id="s1")
+    track.cmd_pause(session_id="s1")
+    with caplog.at_level(logging.INFO, logger="bd-track"):
+        track.cmd_stop("bead-A", clean=False, session_id="s1")
+    assert "Cleared pause" in caplog.text
+    assert _paused(proj) == []
+    track.cmd_resume(all_sessions=True)
+    assert _open(proj) == []
+
+
+def test_start_after_pause_clears_it(proj, monkeypatch):
+    _issue(monkeypatch)
+    _claims(monkeypatch)
+    track.cmd_start("bead-A", session_id="s1")
+    track.cmd_pause(session_id="s1")
+    track.cmd_start("bead-B", session_id="s1")
+    track.cmd_resume(all_sessions=True)
+    assert [iv.bead for iv in _open(proj, "s1")] == ["bead-B"]
+
+
+def test_status_shows_paused(proj, monkeypatch, caplog):
+    import logging
+
+    _issue(monkeypatch)
+    _claims(monkeypatch)
+    track.cmd_start("bead-A", session_id="s1")
+    track.cmd_pause(session_id="s1")
+    with caplog.at_level(logging.INFO, logger="bd-track"):
+        track.cmd_status(session_id="s1")
+    assert "Paused:   bead-A" in caplog.text
+
+
+def test_active_json_lists_open_and_paused(proj, monkeypatch, capsys):
+    import json
+
+    _issue(monkeypatch, title="Title A")
+    _claims(monkeypatch)
+    track.cmd_start("bead-A", session_id="s1")
+    track.cmd_start("bead-B", session_id="s2")
+    track.cmd_pause(["bead-A"], all_sessions=True)
+    capsys.readouterr()
+    track.cmd_active(fmt="json", session_id="s1")
+    rows = json.loads(capsys.readouterr().out)
+    assert [(r["state"], r["bead"]) for r in rows] == [("open", "bead-B"), ("paused", "bead-A")]
+    assert rows[1]["title"] == "Title A" and rows[1]["session"] == "s1"

@@ -37,9 +37,12 @@ def load_sidecar(beads_dir: Path) -> dict:
     return data
 
 
-def get_issue(issue_id: str) -> dict:
-    """Return the issue dict from ``bd show <id> --json``; exits on failure."""
-    result = run(["bd", "show", issue_id, "--json"], check=False, capture=True)
+def get_issue(issue_id: str, *, cwd: Path | None = None) -> dict:
+    """Return the issue dict from ``bd show <id> --json``; exits on failure.
+
+    ``cwd`` runs ``bd`` in another project's root (cross-project views).
+    """
+    result = run(["bd", "show", issue_id, "--json"], check=False, capture=True, cwd=cwd)
     if result.returncode != 0:
         sys.exit(f"bd-track: `bd show {issue_id}` failed:\n{result.stderr}")
     data = json.loads(result.stdout)
