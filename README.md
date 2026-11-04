@@ -44,6 +44,10 @@ session's interval. The 0.5.0 rewrite removes the shared state entirely:
 - **Single-active-per-session, not single-active-global.** A `start` ends only the
   caller's own open interval; a no-argument `stop` can only close ULIDs in the
   caller's own log. The cross-session view is opt-in via `bd-track active`.
+- **Pause and resume.** `bd-track pause` is a `stop` with `paused: true`; `resume` starts a
+  new interval on the same session, bead and tags (`resumed_from` links them). With
+  `--all` (and `--global`) they reach every session, for idle and sleep hooks. Paused time
+  is not billed. A later `start` in that session, or `stop`, clears the pause.
 - **Policy-based aggregation.** `bd-track report` walks the log and totals closed
   intervals under a chosen policy (`billing` / `machine` / `wallclock`) grouped by a
   dimension (`aggregate.py`).
@@ -93,6 +97,10 @@ bd-track status
 # Check every open interval across ALL sessions
 bd-track active
 
+# Cut idle time: pause every open interval (all sessions, all projects), resume later
+bd-track --global pause --all
+bd-track --global resume --all
+
 # Stop (also sweeps closed beads from queues; deferred ones stay — pass --no-clean to skip)
 bd-track stop <bead-id>
 
@@ -119,7 +127,9 @@ bd-track queue prune --scope pipeline
 | `stop [<id>] [--no-clean]` | Append a `stop` event for this session's open interval(s); sweeps closed beads from queues unless `--no-clean` |
 | `switch <id> [--from <id>]` | Stop this session's current interval and start a new one |
 | `status` | Show this session's active interval, bead, billing tuple, elapsed time, and a count of other active sessions |
-| `active` | List **all** open intervals across **all** sessions (the caller's own marked `*`) |
+| `pause [<id>...] [--all] [--dry-run]` | Stop open intervals (this session's, or every session's with `--all`) so `resume` can reopen them; no-op with a note when nothing is open |
+| `resume [<id>...] [--all] [--dry-run]` | Reopen paused intervals with the same session, bead and tags; no-op with a note when nothing is paused |
+| `active [--json]` | List **all** open and paused intervals across **all** sessions (the caller's own marked `*`); `--json` for pickers |
 | `report [--by <dim>] [--policy <p>] [--since/--until]` | Aggregate closed intervals; `--by bead\|session\|actor\|role\|group_id\|<tag-key>`, `--policy billing\|machine\|wallclock` |
 | `resolve <id>` | Print resolved billing tuple without starting |
 | `session current` | Resolve and print the session id for this invocation |

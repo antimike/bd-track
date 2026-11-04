@@ -6,6 +6,19 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`pause` / `resume`** (`bd-timew-11e`): `pause` stops open intervals with `paused: true`
+  in the stop event; `resume` reopens each with a new interval on the same session, bead,
+  tags and provenance (`resumed_from` on the start event). Default scope is this session;
+  `--all` covers every session and `--global` every registered project, `<issue-id>`
+  arguments narrow it, `--dry-run` writes nothing. Both exit 0 with a note when nothing
+  matches, so idle and sleep hooks can call them blindly. A pause is cleared by a later
+  `start` in that session or by `stop` (a `paused: false` correction).
+- **`active --json`** lists open and paused intervals (state, project, session, bead, title,
+  interval, since, tags); the table view also shows paused intervals, and `status` shows
+  this session's.
+
 ## [0.8.0] - 2026-11-03
 
 Off-site backup for beads data: `cleanup` can export issues, memories and session logs to a

@@ -464,6 +464,50 @@ def get_cli_arguments() -> argparse.Namespace:
         help="Skip the post-stop queue sweep for closed beads.",
     )
 
+    # -- pause / resume ------------------------------------------------------
+    for verb, what, help_ in (
+        (
+            "pause",
+            "open",
+            "Stop open intervals, remembering them so `resume` can reopen them.",
+        ),
+        (
+            "resume",
+            "paused",
+            "Reopen paused intervals with the same session, bead and billing tags.",
+        ),
+    ):
+        p_pr = sub.add_parser(
+            verb,
+            help=help_,
+            description=(
+                f"{help_} Defaults to this session's {what} interval; --all covers "
+                "every session (with the global --global, every registered project), "
+                "<issue-id> arguments narrow the set. Exits 0 with a note when nothing "
+                "matches, so idle and sleep hooks can call it blindly. A pause is a "
+                "stop event with paused:true, so paused time is not billed; a later "
+                "start in the same session, or `stop`, clears the pause."
+            ),
+            formatter_class=HelpFormatter,
+        )
+        p_pr.add_argument(
+            "issue_ids",
+            metavar="<issue-id>",
+            nargs="*",
+            help=f"Only the {what} intervals tagged with these bead IDs.",
+        )
+        p_pr.add_argument(
+            "--all",
+            action="store_true",
+            dest="all_sessions",
+            help="Every session, not just this one.",
+        )
+        p_pr.add_argument(
+            "--dry-run",
+            action="store_true",
+            help=f"List the intervals that would be {verb}d; write nothing.",
+        )
+
     # -- show ----------------------------------------------------------------
     p_show = sub.add_parser(
         "show",
@@ -703,15 +747,25 @@ def get_cli_arguments() -> argparse.Namespace:
     )
 
     # -- active --------------------------------------------------------------
-    sub.add_parser(
+    p_active = sub.add_parser(
         "active",
-        help="Show ALL open intervals across ALL sessions (the multi-active view).",
+        help="Show ALL open and paused intervals across ALL sessions (the multi-active view).",
         description=(
             "List every open (started, not yet stopped) interval across every "
             "session in the log — the concurrent-tracking view the timew backend "
-            "structurally could not provide. The caller's own session is marked '*'."
+            "structurally could not provide — then every paused one awaiting "
+            "`resume`. The caller's own session is marked '*'."
         ),
         formatter_class=HelpFormatter,
+    )
+    p_active.add_argument(
+        "--json",
+        action="store_const",
+        const="json",
+        default="table",
+        dest="fmt",
+        help="Print a JSON array (state, project, session, bead, title, interval, "
+        "since, tags) to stdout.",
     )
 
     # -- report --------------------------------------------------------------
@@ -1133,6 +1187,17 @@ def main() -> None:
         from bd_track.track import cmd_stop
 
         cmd_stop(args.issue_id, clean=args.clean, session_id=args.session_id, at=args.at)
+    elif args.cmd in ("pause", "resume"):
+        from bd_track.track import cmd_pause, cmd_resume
+
+        (cmd_pause if args.cmd == "pause" else cmd_resume)(
+            args.issue_ids,
+            all_sessions=args.all_sessions,
+            dry_run=args.dry_run,
+            session_id=args.session_id,
+            project_dir=_resolve_project_scope(args),
+            global_scope=args.global_scope,
+        )
     elif args.cmd == "show":
         from bd_track.track import cmd_show
 
@@ -1200,6 +1265,7 @@ def main() -> None:
         from bd_track.track import cmd_active
 
         cmd_active(
+            fmt=args.fmt,
             session_id=args.session_id,
             project_dir=_resolve_project_scope(args),
             global_scope=args.global_scope,
