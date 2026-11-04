@@ -6,6 +6,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-04
+
+Pause and resume tracking intervals, for idle and sleep hooks.
+
 ### Added
 
 - **`pause` / `resume`** (`bd-timew-11e`): `pause` stops open intervals with `paused: true`
@@ -361,7 +365,8 @@ time-tracking workflow into a multi-module Python package.
   v0.2.0.
 - systemd user units for cleanup and idle-stop timers.
 
-[Unreleased]: https://github.com/antimike/bd-track/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/antimike/bd-track/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/antimike/bd-track/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/antimike/bd-track/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/antimike/bd-track/compare/v0.6.0...v0.7.0
 [0.6.0]: https://github.com/antimike/bd-track/compare/v0.5.1...v0.6.0
