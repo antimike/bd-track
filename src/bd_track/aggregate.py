@@ -50,6 +50,8 @@ class Interval:
     actor: str | None = None
     role: str | None = None
     status: str = "open"  # open | closed | cancelled
+    paused: bool = False  # stopped by `pause` (and not cleared); see paused_intervals
+    resumed_from: str | None = None
 
     @property
     def duration(self) -> dt.timedelta:
@@ -118,8 +120,10 @@ def fold_intervals(events: Iterable[dict]) -> dict[str, Interval]:
             iv.group_id = ev.get("group_id")
             iv.actor = ev.get("actor")
             iv.role = ev.get("role")
+            iv.resumed_from = ev.get("resumed_from")
         elif etype == "stop":
             iv.stop = ev.get("ts")
+            iv.paused = bool(ev.get("paused"))
         elif etype == "cancel":
             cancelled.add(iid)
         elif etype == "correction":
@@ -135,6 +139,8 @@ def fold_intervals(events: Iterable[dict]) -> dict[str, Interval]:
                 iv.actor = ev["actor"]
             if "role" in ev:
                 iv.role = ev["role"]
+            if "paused" in ev:
+                iv.paused = bool(ev["paused"])
     for iid, iv in intervals.items():
         iv.status = "cancelled" if iid in cancelled else ("closed" if iv.stop else "open")
     return intervals
@@ -275,3 +281,21 @@ def report(
 def open_intervals(intervals: Iterable[Interval]) -> list[Interval]:
     """Open/stale intervals (start, no stop, not cancelled) — surfaced, not billed."""
     return [iv for iv in intervals if iv.status == "open"]
+
+
+def paused_intervals(intervals: Iterable[Interval]) -> list[Interval]:
+    """Intervals awaiting ``resume``: per session, the latest live interval, if paused.
+
+    A pause is cleared implicitly by any later start in the same session (a
+    resume, or the session moving on to other work — resuming then would break
+    single-active-per-session), and explicitly by a ``paused: false`` correction.
+    Interval ULIDs are minted at start, so they order a session's intervals.
+    """
+    latest: dict[str | None, Interval] = {}
+    for iv in intervals:
+        if iv.status == "cancelled":
+            continue
+        cur = latest.get(iv.session)
+        if cur is None or iv.interval > cur.interval:
+            latest[iv.session] = iv
+    return [iv for iv in latest.values() if iv.status == "closed" and iv.paused]

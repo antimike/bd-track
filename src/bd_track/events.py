@@ -7,11 +7,16 @@ Append-only event log: one JSON object per line, written with a single
 Schema v1 fields:
   common:  v=1, eid (event ULID — global order), event, interval (interval ULID),
            session_id, ts (ISO-8601 with tz offset)
-  start:   + bead, tags (flat list of strings), group_id|null, actor|null, role|null
-  stop:    (common only)
+  start:   + bead, tags (flat list of strings), group_id|null, actor|null, role|null,
+           optional resumed_from (the paused interval this one resumes)
+  stop:    optional paused=true (``bd-track pause``: the interval may be resumed)
   cancel:  (common only)
-  correction: + any subset of {start, stop, tags, group_id, actor, role};
+  correction: + any subset of {start, stop, tags, group_id, actor, role, paused};
               the aggregator folds corrections by eid, per-field latest-wins.
+              ``paused: false`` clears a pause without resuming it.
+
+The optional keys are additive: readers that predate them see an ordinary
+stop/start, so no schema version bump.
 
 Provenance originates on ``start`` and is mutable only via ``correction`` events
 — never by editing a past line. ``tags`` is a flat list (org-agnostic); the
@@ -149,6 +154,7 @@ def start_interval(
     group_id: str | None = None,
     actor: str | None = None,
     role: str | None = None,
+    resumed_from: str | None = None,
     project_dir: Path | None = None,
 ) -> str:
     """Append a ``start`` event and return the new interval id (ULID)."""
@@ -163,20 +169,30 @@ def start_interval(
             "role": role,
         }
     )
+    if resumed_from is not None:
+        event["resumed_from"] = resumed_from
     append_event(event, session_id=session_id, project_dir=project_dir)
     return interval
 
 
 def stop_interval(
-    interval: str, *, session_id: str, ts: str | None = None, project_dir: Path | None = None
+    interval: str,
+    *,
+    session_id: str,
+    ts: str | None = None,
+    paused: bool = False,
+    project_dir: Path | None = None,
 ) -> None:
     """Append a ``stop`` event for ``interval`` (closes it on aggregation).
 
     ``ts`` overrides the default now() timestamp — used by ``stop --at``.
+    ``paused`` marks the stop as a pause that ``bd-track resume`` may reopen.
     """
     event = _base_event("stop", interval, session_id)
     if ts is not None:
         event["ts"] = ts
+    if paused:
+        event["paused"] = True
     append_event(event, session_id=session_id, project_dir=project_dir)
 
 
@@ -197,11 +213,12 @@ def correct_interval(
     group_id: object = _UNSET,
     actor: object = _UNSET,
     role: object = _UNSET,
+    paused: bool | None = None,
     project_dir: Path | None = None,
 ) -> None:
     """Append a ``correction`` event carrying any subset of mutable fields.
 
-    Time/tags fields are corrected when given (non-None). Provenance fields
+    Time/tags/paused fields are corrected when given (non-None). Provenance fields
     (group_id/actor/role) use a sentinel so they can be corrected *to* null.
     The aggregator folds corrections by eid, per-field latest-wins. Raises if
     nothing would change.
@@ -219,7 +236,11 @@ def correct_interval(
         event["actor"] = actor
     if role is not _UNSET:
         event["role"] = role
-    if not any(k in event for k in ("start", "stop", "tags", "group_id", "actor", "role")):
+    if paused is not None:
+        event["paused"] = paused
+    if not any(
+        k in event for k in ("start", "stop", "tags", "group_id", "actor", "role", "paused")
+    ):
         raise ValueError("correction must change at least one field")
     append_event(event, session_id=session_id, project_dir=project_dir)
 

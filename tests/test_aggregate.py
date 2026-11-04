@@ -228,3 +228,68 @@ def test_read_events_skips_malformed(tmp_path, caplog):
 
 def test_read_events_empty_when_no_dir(tmp_path):
     assert list(aggregate.read_events(tmp_path / "nope")) == []
+
+
+# ---------------------------------------------------------------------------
+# pause / resume (bd-timew-11e)
+# ---------------------------------------------------------------------------
+
+
+def paused_stop(eid, iid, ts, session="s1"):
+    return {**stop(eid, iid, ts, session), "paused": True}
+
+
+def _paused(events):
+    return [
+        iv.interval for iv in aggregate.paused_intervals(aggregate.fold_intervals(events).values())
+    ]
+
+
+def test_paused_stop_is_listed_and_still_billed():
+    evs = [start("e1", "I1", T(9)), paused_stop("e2", "I1", T(10))]
+    ivs = aggregate.fold_intervals(evs)
+    assert ivs["I1"].status == "closed" and ivs["I1"].paused
+    assert _paused(evs) == ["I1"]
+    assert aggregate.total_duration(ivs.values(), POLICIES["billing"]) == hours(1)
+
+
+def test_plain_stop_is_not_paused():
+    assert _paused([start("e1", "I1", T(9)), stop("e2", "I1", T(10))]) == []
+
+
+def test_later_start_in_same_session_clears_pause():
+    evs = [
+        start("e1", "I1", T(9)),
+        paused_stop("e2", "I1", T(10)),
+        {**start("e3", "I2", T(11)), "resumed_from": "I1"},
+    ]
+    assert _paused(evs) == []
+    assert aggregate.fold_intervals(evs)["I2"].resumed_from == "I1"
+
+
+def test_start_in_other_session_keeps_pause():
+    evs = [
+        start("e1", "I1", T(9)),
+        paused_stop("e2", "I1", T(10)),
+        start("e3", "I2", T(11), session="s2"),
+    ]
+    assert _paused(evs) == ["I1"]
+
+
+def test_correction_clears_pause():
+    evs = [
+        start("e1", "I1", T(9)),
+        paused_stop("e2", "I1", T(10)),
+        correction("e3", "I1", T(11), paused=False),
+    ]
+    assert _paused(evs) == []
+
+
+def test_cancelled_later_interval_does_not_hide_pause():
+    evs = [
+        start("e1", "I1", T(9)),
+        paused_stop("e2", "I1", T(10)),
+        start("e3", "I2", T(11)),
+        cancel("e4", "I2", T(11)),
+    ]
+    assert _paused(evs) == ["I1"]
