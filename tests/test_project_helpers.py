@@ -1,8 +1,8 @@
 """Tests for pure helpers in project.py.
 
 Covers cadence parsing and init-project's registry writes — the pieces with
-real logic. Does NOT test cmd_init_project (heavy subprocess mocking;
-deferred to a follow-up bead).
+real logic — plus cmd_init_project's host-settings contract (subprocesses stubbed)
+and `config set`.
 """
 
 from __future__ import annotations
@@ -439,3 +439,128 @@ def test_cleanup_session_logs_copied_even_if_bd_export_fails(tmp_path, stub_bd, 
     (_sessions(tmp_path) / "s1.jsonl").write_text("a\n")
     state = _export_on(tmp_path, stub_bd, monkeypatch)
     assert (state / "amo" / "sessions" / "s1.jsonl").exists()
+
+
+# ---------------------------------------------------------------------------
+# init-project leaves host settings alone; config set writes them (bd-timew-ekm)
+# ---------------------------------------------------------------------------
+
+_HOST_YAML = (
+    "# managed elsewhere\nglobal:\n  check_interval: weekly  # keep\n  idle_stop_hours: 6\n"
+)
+
+
+def _init_defaults(proj: Path, **overrides) -> None:
+    from bd_track import project
+
+    kwargs = dict(
+        path=proj,
+        days=None,
+        commit_cadence=None,
+        statuses_arg=None,
+        hooks_arg=None,
+        no_git_ops=False,
+        install_systemd=True,
+        check_interval=None,
+        idle_stop_hours=None,
+        server_mode=None,
+        dolt_user=None,
+        pass_path=None,
+        yes=True,
+    )
+    kwargs.update(overrides)
+    project.cmd_init_project(**kwargs)
+
+
+@pytest.fixture
+def init_env(reg_home: Path, monkeypatch) -> Path:
+    """A new project, a hand-written config.yaml, and no real subprocesses or systemd."""
+    from bd_track import project
+
+    registry_host = reg_home / "config.yaml"
+    registry_host.write_text(_HOST_YAML)
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(reg_home / "xdg"))
+    monkeypatch.setattr(
+        project,
+        "run",
+        lambda cmd, **k: subprocess.CompletedProcess(cmd, 0, stdout="", stderr=""),
+    )
+    monkeypatch.setattr(project.shutil, "which", lambda name: None)
+    proj = _git(reg_home / "src" / "newproj")
+    (proj / ".beads").mkdir()
+    return proj
+
+
+def test_init_project_defaults_leave_host_config_byte_identical(init_env: Path, reg_home: Path):
+    before = (reg_home / "config.yaml").read_bytes()
+    _init_defaults(init_env)
+    assert (reg_home / "config.yaml").read_bytes() == before
+    units = reg_home / "xdg" / "systemd" / "user"
+    # the installed units take the host values, not hard-coded defaults
+    assert "weekly" in (units / "bd-track-cleanup.timer").read_text()
+    assert "--hours 6" in (units / "bd-track-idle-stop.service").read_text()
+
+
+def test_init_project_flags_apply_to_units_only(init_env: Path, reg_home: Path, caplog):
+    before = (reg_home / "config.yaml").read_bytes()
+    with caplog.at_level("INFO", logger="bd-track"):
+        _init_defaults(init_env, check_interval="daily", idle_stop_hours=2)
+    assert (reg_home / "config.yaml").read_bytes() == before
+    units = reg_home / "xdg" / "systemd" / "user"
+    assert "--hours 2" in (units / "bd-track-idle-stop.service").read_text()
+    assert "bd-track config set idle_stop_hours 2" in caplog.text
+
+
+def test_config_set_writes_parsed_value_and_keeps_comments(reg_home: Path):
+    from bd_track import project
+    from bd_track.registry import load_host_config
+
+    (reg_home / "config.yaml").write_text(_HOST_YAML)
+    project.cmd_config_set("idle_stop_hours", "3")
+    project.cmd_config_set("scan_roots", "[~/src, ~/work]")
+    host = load_host_config()
+    assert host["idle_stop_hours"] == 3
+    assert host["scan_roots"] == ["~/src", "~/work"]
+    text = (reg_home / "config.yaml").read_text()
+    assert "# managed elsewhere" in text and "# keep" in text
+
+
+def test_config_set_creates_missing_file(reg_home: Path):
+    from bd_track import project
+    from bd_track.registry import load_host_config
+
+    project.cmd_config_set("dolt_push", "never")
+    assert load_host_config()["dolt_push"] == "never"
+
+
+@pytest.mark.parametrize(
+    ("key", "value", "message"),
+    [
+        ("idle_stop_hours", "-1", "whole number"),
+        ("idle_stop_hours", "true", "whole number"),
+        ("check_interval", "[daily]", "must be a string"),
+        ("dolt_push", "maybe", "dolt_push"),  # rejected by load_host_config, then rolled back
+    ],
+)
+def test_config_set_rejects_invalid_values_without_writing(reg_home: Path, key, value, message):
+    from bd_track import project
+
+    (reg_home / "config.yaml").write_text(_HOST_YAML)
+    with pytest.raises(SystemExit, match=message):
+        project.cmd_config_set(key, value)
+    assert (reg_home / "config.yaml").read_text() == _HOST_YAML
+
+
+def test_config_set_refuses_while_repos_yaml_holds_host_settings(reg_home: Path):
+    from bd_track import project
+
+    (reg_home / "repos.yaml").write_text("global: {idle_stop_hours: 2}\nrepos: []\n")
+    with pytest.raises(SystemExit, match="migrate registry"):
+        project.cmd_config_set("idle_stop_hours", "3")
+    assert not (reg_home / "config.yaml").exists()
+
+
+def test_cli_host_keys_match_registry():
+    from bd_track import cli, registry
+
+    assert cli._HOST_KEYS == registry.HOST_KEYS
