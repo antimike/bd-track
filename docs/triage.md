@@ -25,7 +25,7 @@ to its spec instead of restating it.
 ### Where the inbox is
 
 `--inbox DIR` names it directly. Otherwise it is `<root>/<project>`, where `<root>` is
-`$BD_TRACK_INBOX_ROOT`, else `$XDG_STATE_HOME/triage` (`~/.local/state/triage`). `<project>` is
+`$BD_TRACK_INBOX_ROOT`, else `$XDG_STATE_HOME/triage` (`~/.local/state/triage` when `XDG_STATE_HOME` is unset or relative). `<project>` is
 the [project registry](registry-schema.md#resolving-a-project) name of `--project-dir` or of the
 current git repository (its `path`, else its `origin` matched against `remote`), so every clone
 and worktree of a project shares one inbox. An unregistered directory, or an unreadable registry

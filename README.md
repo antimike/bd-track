@@ -56,8 +56,10 @@ session's interval. The 0.5.0 rewrite removes the shared state entirely:
 
 Per-session logs live under the Beads directory at
 `<beads_dir>/bd-track/sessions/<session-id>.jsonl` (server-mode fallback
-`~/.local/share/bd-track/<project>/`). Config, cache, and state live under
-`~/.config|cache|state/bd-track`. When a `bd-track` path is absent, the legacy
+`$XDG_DATA_HOME/bd-track/<project>/`). Config, cache, and state live under
+`$XDG_CONFIG_HOME/bd-track`, `$XDG_CACHE_HOME/bd-track` and `$XDG_STATE_HOME/bd-track`.
+Each `XDG_*` variable is honoured when set to an absolute path; otherwise the spec default
+applies (`~/.config`, `~/.cache`, `~/.local/state`, `~/.local/share`). When a `bd-track` path is absent, the legacy
 `bd-timew` location is read as a fallback, so existing data keeps resolving until
 you run `bd-track migrate rename`.
 The logs are gitignored and outside the Dolt database; `cleanup`'s state export backs them up
@@ -182,9 +184,9 @@ to write):
   preserving the historical timestamps, skipping open and bead-less intervals, and
   deduplicating by a content-hash `import_key` (so re-runs are safe). `--from-file`
   imports from a saved export instead of invoking `timew`.
-- **`bd-track migrate registry`** moves `~/.config/bd-track/repos.yaml` into the
-  shared project registry `~/.config/projects.yaml` (and its `global:` block into
-  `~/.config/bd-track/config.yaml` if that file is missing), then renames it to
+- **`bd-track migrate registry`** moves `$XDG_CONFIG_HOME/bd-track/repos.yaml` into the
+  shared project registry `$XDG_CONFIG_HOME/projects.yaml` (and its `global:` block into
+  `$XDG_CONFIG_HOME/bd-track/config.yaml` if that file is missing), then renames it to
   `repos.yaml.migrated`. See [docs/registry-schema.md](docs/registry-schema.md).
 
 ## Per-project sidecar (`.beads/bd-track.yaml`)

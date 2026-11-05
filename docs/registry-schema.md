@@ -1,7 +1,7 @@
 # Project registry schema
 
 The project registry names each project, matches it to its clone, and holds per-project settings
-for the tools that read it. Default location: `~/.config/projects.yaml`. This document is the
+for the tools that read it. Default location: `$XDG_CONFIG_HOME/projects.yaml` (`~/.config/projects.yaml` when unset). This document is the
 schema's single source of truth (bead `bd-timew-d0t.1`); a header comment in the file should link
 here rather than restate it.
 
@@ -25,8 +25,13 @@ bd-track resolves the registry file in this order:
 
 1. `--registry <path>` (commands that read the registry)
 2. `$BD_TRACK_REGISTRY`
-3. `~/.config/projects.yaml`, if it exists
-4. `~/.config/bd-track/repos.yaml` (legacy schema, read-only support; see [Legacy](#legacy-reposyaml))
+3. `$XDG_CONFIG_HOME/projects.yaml`, if it exists
+4. `$XDG_CONFIG_HOME/bd-track/repos.yaml` (legacy schema, read-only support; see [Legacy](#legacy-reposyaml))
+
+`$XDG_CONFIG_HOME` is used when set to an absolute path, else `~/.config` (the XDG rule; a
+relative or empty value is ignored). Tools sharing the registry should resolve it the same way.
+Elsewhere in this document, `~/.config`, `~/.cache`, `~/.local/state` and `~/.local/share` stand
+for `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME`, `$XDG_STATE_HOME` and `$XDG_DATA_HOME` under that rule.
 
 ## Schema
 
