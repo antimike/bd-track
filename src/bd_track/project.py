@@ -920,3 +920,44 @@ def cmd_config_init(project_dir: Path | None = None) -> None:
     sidecar.write_text(render("sidecar/bd-track.yaml.tmpl"))
     root_log.info("Created %s", sidecar)
     root_log.info("Edit it to map your bead labels to billing tuple values.")
+
+
+def cmd_config_set(key: str, value: str) -> None:
+    """Write one host setting into ``config.yaml`` ``global:`` (bd-timew-ekm).
+
+    ``value`` is parsed as YAML, so ``4`` is a number, ``true`` a boolean and ``[a, b]`` a
+    list. The file is written round-trip (comments kept), then validated by loading it; a value
+    that fails validation is rolled back.
+    """
+    import yaml
+
+    from bd_track import registry
+
+    try:
+        parsed = yaml.safe_load(value)
+    except yaml.YAMLError as err:
+        sys.exit(f"bd-track config set: {key}: not a valid YAML value ({err})")
+    if key == "idle_stop_hours" and (
+        not isinstance(parsed, int) or isinstance(parsed, bool) or parsed < 0
+    ):
+        sys.exit("bd-track config set: idle_stop_hours must be a whole number of hours, 0 or more")
+    if key == "check_interval" and not isinstance(parsed, str):
+        sys.exit("bd-track config set: check_interval must be a string (e.g. daily, 12h)")
+
+    target = registry.HOST_CONFIG
+    if not target.exists() and registry.REPOS_CONFIG.exists():
+        sys.exit(
+            f"bd-track config set: host settings still come from {registry.REPOS_CONFIG}; "
+            "run `bd-track migrate registry --apply` first"
+        )
+    before = target.read_bytes() if target.exists() else None
+    try:
+        registry.set_host({key: parsed})
+        registry.load_host_config()
+    except registry.RegistryError as err:
+        if before is None:
+            target.unlink(missing_ok=True)
+        else:
+            target.write_bytes(before)
+        sys.exit(f"bd-track config set: {err}")
+    root_log.info("%s: global.%s = %r", target, key, parsed)

@@ -12,6 +12,23 @@ from bd_track.util import HelpFormatter, root_log, setup_logger
 # force an eager import of the aggregator at CLI-startup time.
 _REPORT_POLICIES = ("billing", "machine", "wallclock")
 
+# Mirrors registry.HOST_KEYS (kept in step by a test); duplicated so argparse choices don't
+# import the registry at CLI-startup time.
+_HOST_KEYS = (
+    "check_interval",
+    "idle_stop_hours",
+    "dolt_push",
+    "defaults",
+    "scan_roots",
+    "dolt_remote_url",
+    "dolt_push_timeout",
+    "state_export",
+    "state_repo",
+    "state_layout",
+    "host_name",
+    "default_url_prefix",
+)
+
 # Commands that work on no single project; --project given to them is an error, not ignored.
 _PROJECTLESS_COMMANDS = (
     "init-project",
@@ -19,6 +36,7 @@ _PROJECTLESS_COMMANDS = (
     "run-service",
     "servers",
     "server-stop",
+    "config set",
 )
 
 _INTERVAL_COMMANDS = (
@@ -976,7 +994,7 @@ def get_cli_arguments() -> argparse.Namespace:
     # -- config init ---------------------------------------------------------
     p_config = sub.add_parser(
         "config",
-        help="Manage bd-track configuration (currently: 'config init' only).",
+        help="Manage bd-track configuration (config init, config set).",
         formatter_class=HelpFormatter,
     )
     p_config_sub = p_config.add_subparsers(dest="config_action", required=True)
@@ -986,6 +1004,20 @@ def get_cli_arguments() -> argparse.Namespace:
         formatter_class=HelpFormatter,
     )
     _add_project_option(p_config_init, legacy=True)
+    p_config_set = p_config_sub.add_parser(
+        "set",
+        help="Write one host setting into $XDG_CONFIG_HOME/bd-track/config.yaml.",
+        description=(
+            "Set global.<key> in $XDG_CONFIG_HOME/bd-track/config.yaml, creating the file if "
+            "missing and keeping its comments. <value> is parsed as YAML (4, true, [a, b]). "
+            "The result is validated and rolled back if it fails. If a config manager owns "
+            "the file, change it there instead. Keys: " + ", ".join(_HOST_KEYS) + "; "
+            "see docs/registry-schema.md."
+        ),
+        formatter_class=HelpFormatter,
+    )
+    p_config_set.add_argument("key", metavar="<key>", choices=_HOST_KEYS)
+    p_config_set.add_argument("value", metavar="<value>")
 
     # -- idle-stop -----------------------------------------------------------
     p_idle = sub.add_parser(
@@ -1200,8 +1232,9 @@ def _resolve_project_scope(args: argparse.Namespace) -> Path | None:
             sys.exit("bd-track: give --project or --project-dir, not both")
     if (args.project_scope or legacy is not None) and args.global_scope:
         sys.exit("bd-track: --project and --global are mutually exclusive")
-    if (args.project_scope or legacy is not None) and args.cmd in _PROJECTLESS_COMMANDS:
-        sys.exit(f"bd-track: --project does not apply to `{args.cmd}`")
+    command = " ".join(filter(None, (args.cmd, getattr(args, "config_action", None))))
+    if (args.project_scope or legacy is not None) and command in _PROJECTLESS_COMMANDS:
+        sys.exit(f"bd-track: --project does not apply to `{command}`")
     if legacy is not None:
         return Path(legacy).expanduser()
     if args.project_scope:
@@ -1392,6 +1425,10 @@ def main() -> None:
             from bd_track.project import cmd_config_init
 
             cmd_config_init(project_dir=project_dir)
+        elif args.config_action == "set":
+            from bd_track.project import cmd_config_set
+
+            cmd_config_set(args.key, args.value)
     elif args.cmd == "idle-stop":
         from bd_track.server import cmd_idle_stop
 
