@@ -905,6 +905,13 @@ def get_cli_arguments() -> argparse.Namespace:
     p_init = sub.add_parser(
         "init-project",
         help="Configure a Beads project and register it for auto-cleanup.",
+        description=(
+            "Configure a Beads project and register it in the project registry. "
+            "init-project never writes host settings: --install-systemd reads "
+            "check_interval and idle_stop_hours from $XDG_CONFIG_HOME/bd-track/config.yaml, "
+            "and the flags below override them for the units it installs only. "
+            "Change host settings with `bd-track config set`."
+        ),
         formatter_class=HelpFormatter,
     )
     p_init.add_argument("--path", type=Path, default=None)
@@ -914,8 +921,19 @@ def get_cli_arguments() -> argparse.Namespace:
     p_init.add_argument("--hooks", action=argparse.BooleanOptionalAction, default=None)
     p_init.add_argument("--no-git-ops", action="store_true")
     p_init.add_argument("--install-systemd", action="store_true")
-    p_init.add_argument("--check-interval", type=str, default="daily")
-    p_init.add_argument("--idle-stop-hours", type=int, default=None)
+    p_init.add_argument(
+        "--check-interval",
+        type=str,
+        default=None,
+        help="Cleanup timer interval for the installed unit (default: host check_interval).",
+    )
+    p_init.add_argument(
+        "--idle-stop-hours",
+        type=int,
+        default=None,
+        help="Idle-stop threshold for the installed unit, 0 to skip it "
+        "(default: host idle_stop_hours).",
+    )
     p_init.add_argument("--server", action=argparse.BooleanOptionalAction, default=None)
     p_init.add_argument("--dolt-user", type=str, default=None)
     p_init.add_argument("--pass-path", type=str, default=None)

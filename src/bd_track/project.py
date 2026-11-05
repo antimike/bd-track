@@ -185,13 +185,25 @@ def _home_relative(path: Path) -> str:
         return str(path)
 
 
-def _set_host_or_warn(values: dict) -> None:
-    from bd_track.registry import RegistryError, set_host
+def _host_setting(key: str, flag_value: object, host: dict) -> object:
+    """The flag's value if given, else the host setting; init-project never writes host settings.
 
-    try:
-        set_host(values)
-    except RegistryError as err:
-        root_log.warning("could not record host settings %s: %s", values, err)
+    A flag that differs from ``config.yaml`` applies to the units installed now only, so say how
+    to make it the host setting (bd-timew-ekm).
+    """
+    if flag_value is None:
+        return host[key]
+    if flag_value != host[key]:
+        root_log.info(
+            "%s %s applies to the units installed now; host setting is %s "
+            "(`bd-track config set %s %s` to change it)",
+            key,
+            flag_value,
+            host[key],
+            key,
+            flag_value,
+        )
+    return flag_value
 
 
 def _load_cleanup_state() -> dict:
@@ -380,7 +392,7 @@ def cmd_init_project(
     hooks_arg: bool | None,
     no_git_ops: bool,
     install_systemd: bool,
-    check_interval: str,
+    check_interval: str | None,
     idle_stop_hours: int | None,
     server_mode: bool | None,
     dolt_user: str | None,
@@ -487,12 +499,8 @@ def cmd_init_project(
             yes=yes,
         )
 
-    if idle_stop_hours is not None:
-        effective_idle_hours: int = idle_stop_hours
-    else:
-        effective_idle_hours = int(
-            prompt("Idle server stop threshold (hours, 0 to disable)", "4", yes=yes)
-        )
+    effective_idle_hours = int(_host_setting("idle_stop_hours", idle_stop_hours, host))
+    effective_interval = str(_host_setting("check_interval", check_interval, host))
 
     for key, value in _bd_config_settings(no_git_ops=no_git_ops, statuses=effective_statuses):
         result = run(
@@ -571,17 +579,14 @@ def cmd_init_project(
         "Updated" if existing_entry else "Registered",
         registry_name,
     )
-    _set_host_or_warn({"idle_stop_hours": effective_idle_hours})
-
-    global_interval = host.get("check_interval", check_interval)
     try:
-        interval_td = parse_cadence(_INTERVAL_ALIASES.get(global_interval, global_interval))
+        interval_td = parse_cadence(_INTERVAL_ALIASES.get(effective_interval, effective_interval))
         repo_cadence_td = parse_cadence(effective_cadence)
         if interval_td > repo_cadence_td:
             root_log.warning(
                 "check_interval '%s' is coarser than commit_cadence '%s' — "
                 "commits for this project may be delayed",
-                global_interval,
+                effective_interval,
                 effective_cadence,
             )
     except SystemExit:
@@ -590,7 +595,7 @@ def cmd_init_project(
     if not install_systemd:
         return
 
-    _install_systemd_units(check_interval, effective_idle_hours)
+    _install_systemd_units(effective_interval, effective_idle_hours)
 
 
 def _install_systemd_units(check_interval: str, idle_stop_hours: int) -> None:
@@ -614,7 +619,6 @@ def _install_systemd_units(check_interval: str, idle_stop_hours: int) -> None:
         "Cleanup service",
     )
     if not cleanup_timer.exists():
-        _set_host_or_warn({"check_interval": check_interval})
         cleanup_timer.write_text(
             render(
                 "systemd/bd-track-cleanup.timer.tmpl",
