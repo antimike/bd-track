@@ -169,7 +169,7 @@ def find_beads_dir(project_dir: Path | None = None) -> Path:
     if result.returncode != 0:
         sys.exit(
             "bd-track: no active Beads workspace. cd into a project with "
-            ".beads/, or pass --project-dir."
+            ".beads/, or pass --project <name-or-path>."
         )
     return Path(result.stdout.strip().split("\n", 1)[0].strip())
 
@@ -225,30 +225,39 @@ def record_activity(project_path: str) -> None:
 # ---------------------------------------------------------------------------
 
 
-def resolve_project_dir(slug_or_path: str) -> Path:
-    """Resolve ``--project <name-or-path>`` to a project root via the registry.
+def resolve_project_dir(name_or_path: str) -> Path:
+    """Resolve ``--project <name-or-path>`` to a project root.
 
-    Matches a registry name, a path basename (legacy repos.yaml names), or the path itself.
-    A registered name whose clone is not known yet forces a fresh scan of the scan roots.
+    Matches a registry name, a path basename (legacy repos.yaml names), or a registered path;
+    failing that, an existing directory is used as given, registered or not. A registered
+    name whose clone is not known yet forces a fresh scan of the scan roots, and never falls
+    back to a same-named directory.
     """
     from bd_track.registry import load_registry_or_exit
 
-    candidate = Path(slug_or_path).expanduser()
+    candidate = Path(name_or_path).expanduser()
     registry = load_registry_or_exit()
     for attempt in (1, 2):
         known = [p for p in registry.projects.values() if p.path is not None]
         for project in known:
-            if slug_or_path in (project.name, project.path.name) or project.path == candidate:
+            if name_or_path in (project.name, project.path.name) or project.path == candidate:
                 return project.path
-        pending = registry.get(slug_or_path)
+        pending = registry.get(name_or_path)
         if attempt == 2 or pending is None or pending.remote is None:
             break
         registry = load_registry_or_exit(scan=True)
+    source = f" ({registry.source})" if registry.source else ""
+    if registry.get(name_or_path) is not None:
+        sys.exit(
+            f"bd-track: project {name_or_path!r} is in the project registry{source} but its "
+            "clone was not found on this host; pass its directory instead"
+        )
+    if candidate.is_dir():
+        return candidate.resolve()
     names = ", ".join(p.name for p in known)
     sys.exit(
-        f"bd-track: --project {slug_or_path!r} not found in the project registry"
-        + (f" ({registry.source})" if registry.source else "")
-        + (f"; known: {names}" if names else "")
+        f"bd-track: --project {name_or_path!r} is neither a project in the registry{source}"
+        " nor an existing directory" + (f"; known: {names}" if names else "")
     )
 
 

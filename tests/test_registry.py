@@ -519,16 +519,28 @@ def two_projects(home: Path, tmp_path: Path) -> tuple[Path, Path]:
     return chz.resolve(), amo.resolve()
 
 
-def test_resolve_project_dir(two_projects):
+def test_resolve_project_dir(two_projects, tmp_path: Path, monkeypatch):
     from bd_track.util import resolve_project_dir
 
     chz, amo = two_projects
+    (tmp_path / "docs").mkdir()
+    monkeypatch.chdir(tmp_path)
     assert resolve_project_dir("dotfiles") == chz
     assert resolve_project_dir("chezmoi") == chz  # legacy basename still matches
     assert resolve_project_dir("amo") == amo
     assert resolve_project_dir(str(amo)) == amo
-    with pytest.raises(SystemExit, match=r"not found in the project registry.*dotfiles, amo"):
-        resolve_project_dir("docs")  # no known path
+    with pytest.raises(SystemExit, match=r"'docs' is in the project registry.*clone was not found"):
+        resolve_project_dir("docs")  # no known path; ./docs must not stand in for it
+    with pytest.raises(SystemExit, match=r"neither a project in the registry.*dotfiles, amo"):
+        resolve_project_dir("nowhere")
+
+
+def test_resolve_project_dir_accepts_unregistered_directory(two_projects, tmp_path: Path):
+    from bd_track.util import resolve_project_dir
+
+    loose = tmp_path / "loose"
+    loose.mkdir()
+    assert resolve_project_dir(str(loose)) == loose.resolve()
 
 
 def test_all_project_dirs(two_projects, home: Path):
