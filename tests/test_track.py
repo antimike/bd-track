@@ -133,7 +133,7 @@ def test_stop_sweep_keeps_deferred_drops_closed(proj, monkeypatch):
     monkeypatch.delenv("BD_TRACK_SCOPE", raising=False)
     monkeypatch.setattr(queue, "find_beads_dir", lambda project_dir=None: proj)
     statuses = {"PARKED": "deferred", "DONE": "closed", "NEXT": "open"}
-    monkeypatch.setattr(queue, "get_issue", lambda iid: {"id": iid, "status": statuses[iid]})
+    monkeypatch.setattr(queue, "get_issue", lambda iid, **k: {"id": iid, "status": statuses[iid]})
     queue.save_all_queues(proj, {"work": ["DONE", "NEXT"], "work.operator": ["PARKED"]})
     _issue(monkeypatch)
     _claims(monkeypatch)

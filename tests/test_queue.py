@@ -221,7 +221,7 @@ def _stub_get_issue(
     deps = dependencies or {}
     lbls = labels or {}
 
-    def _impl(bead_id: str) -> dict:
+    def _impl(bead_id: str, **_: object) -> dict:
         if bead_id not in statuses:
             # Simulate the SystemExit that get_issue raises on bd failure.
             raise SystemExit(f"missing bead: {bead_id}")

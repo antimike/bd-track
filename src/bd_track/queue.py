@@ -69,18 +69,18 @@ STOP_SWEEP_STATUSES = {"closed"}
 BLOCKING_DEP_TYPES = {"blocks", "blocked-by", "conditional-blocks", "waits-for"}
 
 
-def _fetch_title(bead_id: str) -> str:
+def _fetch_title(bead_id: str, cwd: Path | None = None) -> str:
     """Return the bead title, or '' on any error (non-fatal)."""
     try:
-        return get_issue(bead_id).get("title", "")
+        return get_issue(bead_id, cwd=cwd).get("title", "")
     except SystemExit:
         return ""
 
 
-def _fetch_issue_safe(bead_id: str) -> dict | None:
+def _fetch_issue_safe(bead_id: str, cwd: Path | None = None) -> dict | None:
     """Return the bead dict, or ``None`` if bd lookup fails."""
     try:
-        return get_issue(bead_id)
+        return get_issue(bead_id, cwd=cwd)
     except SystemExit:
         return None
 
@@ -144,7 +144,7 @@ def cmd_queue(
     def _fmt(bead_id: str) -> str:
         if not titles:
             return bead_id
-        title = _fetch_title(bead_id)
+        title = _fetch_title(bead_id, beads_dir.parent)
         return f"{bead_id}  {title}" if title else bead_id
 
     if action == "list":
@@ -203,7 +203,7 @@ def cmd_queue(
         save_all_queues(beads_dir, all_queues)
         print(head)
         if titles:
-            title = _fetch_title(head)
+            title = _fetch_title(head, beads_dir.parent)
             if title:
                 root_log.info("%s  %s", head, title)
 
@@ -214,7 +214,7 @@ def cmd_queue(
             return
         print(queue[0])
         if titles:
-            title = _fetch_title(queue[0])
+            title = _fetch_title(queue[0], beads_dir.parent)
             if title:
                 root_log.info("%s  %s", queue[0], title)
 
@@ -282,7 +282,7 @@ def cmd_clean(
             continue
         keep, drop = [], []
         for bead_id in queue:
-            issue = _fetch_issue_safe(bead_id)
+            issue = _fetch_issue_safe(bead_id, beads_dir.parent)
             if issue is None:
                 # Bead not found — leave it so the user notices via prune.
                 keep.append(bead_id)
@@ -431,6 +431,7 @@ def _proposals_for_queue(
     scope: str,
     queue: list[str],
     other_queues: dict[str, list[str]],
+    cwd: Path | None = None,
 ) -> list[tuple[str, str, str]]:
     """Return a list of (action, bead_id, reason) tuples for one queue.
 
@@ -441,7 +442,7 @@ def _proposals_for_queue(
       - ``add-before`` — a blocker of an in-queue bead is itself missing/queued
     """
     proposals: list[tuple[str, str, str]] = []
-    fetched: dict[str, dict | None] = {bid: _fetch_issue_safe(bid) for bid in queue}
+    fetched: dict[str, dict | None] = {bid: _fetch_issue_safe(bid, cwd) for bid in queue}
     pos = {bid: i for i, bid in enumerate(queue)}
 
     heuristic = _SCOPE_HEURISTICS.get(scope, {})
@@ -574,6 +575,7 @@ def cmd_prune(
             scope,
             queue,
             other_queues={s: q for s, q in all_queues.items() if s != scope},
+            cwd=beads_dir.parent,
         )
         if not proposals:
             root_log.info("[%s] no issues found", scope)

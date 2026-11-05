@@ -153,12 +153,22 @@ def _select(
 # ---------------------------------------------------------------------------
 
 
-def cmd_start(issue_id: str, *, dry_run: bool = False, session_id: str | None = None) -> None:
-    """Resolve the billing tuple, claim the bead, append a ``start`` event."""
-    beads_dir = find_beads_dir()
+def cmd_start(
+    issue_id: str,
+    *,
+    dry_run: bool = False,
+    session_id: str | None = None,
+    project_dir: Path | None = None,
+) -> None:
+    """Resolve the billing tuple, claim the bead, append a ``start`` event.
+
+    ``bd`` runs in the project root, so with ``project_dir`` the claim lands in the same
+    project as the interval whatever the cwd.
+    """
+    beads_dir = find_beads_dir(project_dir)
     project_root = beads_dir.parent
     sidecar = load_sidecar(beads_dir)
-    issue = get_issue(issue_id)
+    issue = get_issue(issue_id, cwd=project_root)
     labels: list[str] = issue.get("labels") or []
     tuple_ = resolve_tuple(labels, sidecar)
 
@@ -191,7 +201,7 @@ def cmd_start(issue_id: str, *, dry_run: bool = False, session_id: str | None = 
     if issue.get("status") != "in_progress":
         from bd_track.util import run
 
-        run(["bd", "update", issue_id, "--claim"], check=False)
+        run(["bd", "update", issue_id, "--claim"], check=False, cwd=project_root)
 
     record_activity(str(project_root.resolve()))
 
@@ -202,6 +212,7 @@ def cmd_stop(
     clean: bool = True,
     session_id: str | None = None,
     at: str | None = None,
+    project_dir: Path | None = None,
 ) -> None:
     """Append a ``stop`` event for this session's open interval(s).
 
@@ -215,7 +226,7 @@ def cmd_stop(
     When ``clean`` is True (default), sweeps closed beads from queue scopes
     afterward (``--no-clean`` to skip). Deferred beads stay queued.
     """
-    project_root = _project_root()
+    project_root = _project_root(project_dir)
     sid = resolve_session_id(project_root, explicit=session_id)
     record_activity(str(project_root.resolve()))
 
@@ -263,17 +274,21 @@ def cmd_stop(
         from bd_track.queue import STOP_SWEEP_STATUSES, cmd_clean
 
         try:
-            cmd_clean(quiet=True, statuses=STOP_SWEEP_STATUSES)
+            cmd_clean(quiet=True, statuses=STOP_SWEEP_STATUSES, project_dir=project_root)
         except SystemExit:
             pass
 
 
 def cmd_switch(
-    issue_id: str, *, from_issue_id: str | None = None, session_id: str | None = None
+    issue_id: str,
+    *,
+    from_issue_id: str | None = None,
+    session_id: str | None = None,
+    project_dir: Path | None = None,
 ) -> None:
     """Stop the current interval and start one on ``issue_id`` (composition)."""
-    cmd_stop(from_issue_id, clean=False, session_id=session_id)
-    cmd_start(issue_id, session_id=session_id)
+    cmd_stop(from_issue_id, clean=False, session_id=session_id, project_dir=project_dir)
+    cmd_start(issue_id, session_id=session_id, project_dir=project_dir)
 
 
 # ---------------------------------------------------------------------------
@@ -829,9 +844,9 @@ def cmd_list(
 # ---------------------------------------------------------------------------
 
 
-def cmd_status(*, session_id: str | None = None) -> None:
+def cmd_status(*, session_id: str | None = None, project_dir: Path | None = None) -> None:
     """Show this session's open interval(s): bead, tuple, elapsed."""
-    project_root = _project_root()
+    project_root = _project_root(project_dir)
     sid = resolve_session_id(project_root, explicit=session_id)
     all_open = open_intervals(load_intervals(log_dir(project_root)))
     mine = [iv for iv in all_open if iv.session == sid]
@@ -856,7 +871,7 @@ def cmd_status(*, session_id: str | None = None) -> None:
         status = ""
         if iv.bead:
             try:
-                issue = get_issue(iv.bead)
+                issue = get_issue(iv.bead, cwd=project_root)
                 title = issue.get("title", "")
                 status = issue.get("status", "")
             except SystemExit:
