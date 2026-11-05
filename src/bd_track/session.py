@@ -33,14 +33,12 @@ import json
 import os
 from pathlib import Path
 
-from bd_track.util import env_compat, find_beads_dir, path_compat
+from bd_track.util import env_compat, find_beads_dir, path_compat, xdg_home
 
 # Operational state — XDG_STATE_HOME, not ~/.cache: the pointer is regenerable
 # but not throwaway mid-session. Never synced (see the operational/authoritative
 # split in docs/dev/timetracking-architecture.06022026.md).
-SESSION_STATE_DIR = path_compat(
-    Path.home() / ".local" / "state" / "bd-track", Path.home() / ".local" / "state" / "bd-timew"
-)
+SESSION_STATE_DIR = path_compat(xdg_home("state") / "bd-track", xdg_home("state") / "bd-timew")
 POINTER_NAME = "current-session.json"
 
 # A pointer entry unused for longer than this is treated as a finished session;

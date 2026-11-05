@@ -34,6 +34,7 @@ from bd_track.util import (
     prompt,
     root_log,
     run,
+    xdg_home,
 )
 
 _ENVRC_MARKER = "# bd-track: beads dolt server"
@@ -594,7 +595,7 @@ def cmd_init_project(
 
 def _install_systemd_units(check_interval: str, idle_stop_hours: int) -> None:
     """Install the cleanup + idle-stop systemd user units (idempotent)."""
-    systemd_dir = Path.home() / ".config" / "systemd" / "user"
+    systemd_dir = xdg_home("config") / "systemd" / "user"
     systemd_dir.mkdir(parents=True, exist_ok=True)
     bd_track_path = shutil.which("bd-track") or sys.argv[0]
 

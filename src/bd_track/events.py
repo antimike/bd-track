@@ -38,7 +38,7 @@ from pathlib import Path
 from ulid import ULID
 
 from bd_track.session import project_id
-from bd_track.util import env_compat, find_beads_dir, path_compat, root_log
+from bd_track.util import env_compat, find_beads_dir, path_compat, root_log, xdg_home
 
 SCHEMA_VERSION = 1
 
@@ -54,11 +54,11 @@ PIPE_BUF = 4096
 # XDG_DATA_HOME path is the server-mode / no-local-.beads fallback (NOT ~/.cache —
 # billing data is not disposable; and distinct from session.py's ~/.local/state
 # pointer, which is machine-local operational state).
-LOG_FALLBACK_DIR = Path.home() / ".local" / "share" / "bd-track"
+LOG_FALLBACK_DIR = xdg_home("data") / "bd-track"
 # Legacy fallback dir + log subdir; read by path_compat so an un-migrated
 # project keeps logging to (and reading from) its original location until
 # `bd-track migrate rename` moves it. See env_compat/path_compat in util.py.
-_LEGACY_FALLBACK_DIR = Path.home() / ".local" / "share" / "bd-timew"
+_LEGACY_FALLBACK_DIR = xdg_home("data") / "bd-timew"
 
 VALID_EVENTS = ("start", "stop", "cancel", "correction")
 
@@ -81,7 +81,7 @@ def log_dir(project_dir: Path | None = None) -> Path:
     """Resolve the per-session log directory (bd-timew-tq9).
 
     ``<beads_dir>/bd-track/sessions/`` when a local beads dir exists; otherwise
-    ``~/.local/share/bd-track/<project-id>/sessions/``.
+    ``$XDG_DATA_HOME/bd-track/<project-id>/sessions/`` (default ``~/.local/share``).
     """
     beads_dir: Path | None = None
     try:

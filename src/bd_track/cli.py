@@ -44,7 +44,7 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
             "Work a project's ticket inbox: <inbox>/triage/*.md files and "
             "<inbox>/triage/inbox.md paragraphs. The inbox is --inbox, else "
             "$BD_TRACK_INBOX_ROOT/<project>, else $XDG_STATE_HOME/triage/<project> "
-            "(~/.local/state/triage/<project>), where <project> is the registry name of "
+            "($XDG_STATE_HOME defaults to ~/.local/state), where <project> is the registry name of "
             "--project-dir or of the current git repository (else its basename). "
             "See docs/triage.md."
         ),
@@ -992,7 +992,7 @@ def get_cli_arguments() -> argparse.Namespace:
         "rename",
         help="Rename bd-timew on-disk artifacts to bd-track (dry-run by default).",
         description=(
-            "Rename the global ~/.config|cache|state|local-share/bd-timew dirs, "
+            "Rename the global bd-timew dirs under the XDG config, cache, state and data bases, "
             "this project's .beads/bd-timew.yaml sidecar + <beads>/bd-timew session "
             "logs, and rewrite BD_TIMEW_* → BD_TRACK_* in .envrc/.env/.envrc.local/"
             "mise.toml. Dry-run by default; chezmoi-managed home/dotfile targets are "
@@ -1028,13 +1028,13 @@ def get_cli_arguments() -> argparse.Namespace:
 
     p_migrate_registry = p_migrate_sub.add_parser(
         "registry",
-        help="Move ~/.config/bd-track/repos.yaml into the project registry (projects.yaml).",
+        help="Move $XDG_CONFIG_HOME/bd-track/repos.yaml into the project registry (projects.yaml).",
         description=(
             "Write each repos.yaml entry into the registry (a project with the same path, or "
             "the path-less one whose remote matches the clone's origin, gets only the bd-track "
             "keys it does not already set; others are added under their basename), copy "
-            "repos.yaml's global: block into ~/.config/bd-track/config.yaml if that file does "
-            "not exist, record the clones' paths in the path cache, then rename repos.yaml to "
+            "repos.yaml's global: block into $XDG_CONFIG_HOME/bd-track/config.yaml if that file "
+            "does not exist, record the clones' paths in the path cache, then rename repos.yaml to "
             "repos.yaml.migrated. Entries whose name is taken are skipped and repos.yaml stays. "
             "Dry-run by default."
         ),

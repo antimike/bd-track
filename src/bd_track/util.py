@@ -51,13 +51,36 @@ def path_compat(new: Path, old: Path) -> Path:
 
 
 # ---------------------------------------------------------------------------
+# XDG base directories
+# ---------------------------------------------------------------------------
+
+_XDG_DEFAULTS = {
+    "config": ("XDG_CONFIG_HOME", (".config",)),
+    "cache": ("XDG_CACHE_HOME", (".cache",)),
+    "state": ("XDG_STATE_HOME", (".local", "state")),
+    "data": ("XDG_DATA_HOME", (".local", "share")),
+}
+
+
+def xdg_home(kind: str) -> Path:
+    """Base directory for ``kind`` (config/cache/state/data) per the XDG spec.
+
+    The env var wins when set to an absolute path; an unset, empty or relative
+    value is ignored (the spec says so) and the ``$HOME`` default is used.
+    """
+    var, default = _XDG_DEFAULTS[kind]
+    val = os.environ.get(var)
+    if val and os.path.isabs(val):
+        return Path(val)
+    return Path.home().joinpath(*default)
+
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
-_CONFIG_DIR = path_compat(
-    Path.home() / ".config" / "bd-track", Path.home() / ".config" / "bd-timew"
-)
-_CACHE_DIR = path_compat(Path.home() / ".cache" / "bd-track", Path.home() / ".cache" / "bd-timew")
+_CONFIG_DIR = path_compat(xdg_home("config") / "bd-track", xdg_home("config") / "bd-timew")
+_CACHE_DIR = path_compat(xdg_home("cache") / "bd-track", xdg_home("cache") / "bd-timew")
 
 REPOS_CONFIG = _CONFIG_DIR / "repos.yaml"
 CLEANUP_STATE = _CACHE_DIR / "cleanup-state.json"

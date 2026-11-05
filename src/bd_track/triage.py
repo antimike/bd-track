@@ -31,7 +31,7 @@ from pathlib import Path
 
 import yaml
 
-from bd_track.util import is_interactive, root_log
+from bd_track.util import is_interactive, root_log, xdg_home
 
 TRIAGE_DIR = "triage"
 DONE_DIR = "done"
@@ -254,8 +254,7 @@ def inbox_root() -> Path:
     explicit = os.environ.get("BD_TRACK_INBOX_ROOT")
     if explicit:
         return Path(explicit).expanduser()
-    state = os.environ.get("XDG_STATE_HOME") or str(Path.home() / ".local" / "state")
-    return Path(state).expanduser() / "triage"
+    return xdg_home("state") / "triage"
 
 
 def project_root(project_dir: Path | None = None) -> Path:

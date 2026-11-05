@@ -3,8 +3,9 @@
 The schema, location order and ownership rules are specified in docs/registry-schema.md; this
 module implements them. Summary:
 
-- **Location**: ``--registry`` → ``$BD_TRACK_REGISTRY`` → ``~/.config/projects.yaml`` if it
-  exists → legacy ``~/.config/bd-track/repos.yaml``.
+- **Location**: ``--registry`` → ``$BD_TRACK_REGISTRY`` → ``$XDG_CONFIG_HOME/projects.yaml`` if
+  it exists → legacy ``$XDG_CONFIG_HOME/bd-track/repos.yaml`` (``XDG_CONFIG_HOME`` defaults to
+  ``~/.config``; likewise ``~/.config``/``~/.cache`` below mean the XDG bases).
 - **Schema**: ``projects: {<name>: {remote, path, beads: {prefix, ...}}}``. A legacy
   ``repos:`` list (keyed by absolute path) is read as projects named by path basename.
 - **Remotes** (``bd-timew-q9o.6``): ``remote`` is any URL git accepts, or the ``owner/repo``
@@ -44,9 +45,9 @@ from pathlib import Path
 from ruamel.yaml import YAML
 from ruamel.yaml.error import YAMLError
 
-from bd_track.util import _CACHE_DIR, _CONFIG_DIR, REPOS_CONFIG, root_log
+from bd_track.util import _CACHE_DIR, _CONFIG_DIR, REPOS_CONFIG, root_log, xdg_home
 
-DEFAULT_REGISTRY = Path.home() / ".config" / "projects.yaml"
+DEFAULT_REGISTRY = xdg_home("config") / "projects.yaml"
 HOST_CONFIG = _CONFIG_DIR / "config.yaml"
 PATH_CACHE = _CACHE_DIR / "registry-paths.json"
 

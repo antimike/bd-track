@@ -27,7 +27,7 @@ import json
 import shutil
 from pathlib import Path
 
-from bd_track.util import find_beads_dir, root_log, run
+from bd_track.util import find_beads_dir, root_log, run, xdg_home
 
 # Env files scanned for BD_TIMEW_* → BD_TRACK_* rewrites, relative to a repo root.
 _ENV_FILES = (".envrc", ".env", ".envrc.local", "mise.toml", ".mise.toml")
@@ -144,13 +144,7 @@ def _plan_env(path: Path, *, managed: set[Path] | None) -> Action | None:
 
 
 def _plan_global(managed: set[Path] | None) -> list[Action]:
-    home = Path.home()
-    bases = [
-        home / ".config",
-        home / ".cache",
-        home / ".local" / "state",
-        home / ".local" / "share",
-    ]
+    bases = [xdg_home(kind) for kind in ("config", "cache", "state", "data")]
     return [
         _plan_move(base / _OLD, base / _NEW, "dir", managed=managed, check_chezmoi=True)
         for base in bases
