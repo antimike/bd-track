@@ -150,6 +150,7 @@ bd-track queue prune --scope pipeline
 | `cleanup` | Run Beads/Dolt maintenance (commit, compact, GC) |
 | `init-project` | Configure a Beads project for billing tuple resolution and registered cleanup |
 | `config init` | Scaffold a per-project sidecar with annotated defaults |
+| `config set <key> <value>` | Write one host setting to `$XDG_CONFIG_HOME/bd-track/config.yaml` (`init-project` never writes it) |
 | `servers` | List registered repos and their Dolt server status |
 | `server-stop [--path]` | Stop Dolt servers for one or all registered repos |
 | `idle-stop --hours N` | Stop Dolt servers idle longer than threshold |

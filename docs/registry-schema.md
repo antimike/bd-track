@@ -93,6 +93,13 @@ global:
     hooks: []
 ```
 
+bd-track writes this file only when asked: `bd-track config set <key> <value>` (one key,
+value parsed as YAML, comments kept, validated and rolled back on failure) and
+`migrate registry` (only when the file does not exist yet). `init-project` reads
+`check_interval` and `idle_stop_hours` for the systemd units it installs and never writes
+them; its `--check-interval` / `--idle-stop-hours` flags apply to those units only
+(`bd-timew-ekm`). So a config manager can own the file without bd-track drifting it.
+
 Resolved clone paths (remote → path, `bd-timew-d0t.3`) are cached in
 `~/.cache/bd-track/registry-paths.json`. The cache is never authoritative: a cached path whose
 `origin` no longer matches is dropped and re-resolved.
@@ -314,8 +321,8 @@ default):
 Registry values win: a project that already sets a key keeps it. When every entry has moved,
 `repos.yaml` is renamed to `repos.yaml.migrated` (rename it back to undo); if any entry was
 skipped (name taken, no prefix) it stays, and the bridge below keeps covering it. Since
-`bd-timew-d0t.4`, `init-project` writes the registry (and its host keys `idle_stop_hours` and
-`check_interval` to `config.yaml`), never `repos.yaml`; `--name` names a new project when its
+`bd-timew-d0t.4`, `init-project` writes the registry, never `repos.yaml` (nor, since
+`bd-timew-ekm`, `config.yaml`); `--name` names a new project when its
 basename is taken.
 
 `--project <slug>` keeps matching a legacy path basename.
@@ -353,4 +360,5 @@ implement.
 | 2026-11-02 | Dolt push refs are `refs/dolt/<host>/<database>`, host = `global.host_name` (default the short hostname): a project on two hosts pushed both to one ref, and the forced retry let the last host replace the other's copy. Ref per host, not branch per host: a Dolt remote keeps all branches in one store under one git ref, and `reset-data` rebuilds it from local HEAD, wiping other hosts' branches (`bd-timew-q9o.2`, MH). |
 | 2026-11-02 | The state export copies session event logs to `sessions/` beside the issues file (`sessions/<project>/` for a flat layout), new or grown files only, with no setting: they are billing data outside every other backup (`bd-timew-q9o.1`). |
 | 2026-11-03 | `remote` accepts any git URL or the `owner/repo` shorthand, still a string (no `remote.github`/`remote.ssh` subdict: the URL carries the protocol, `insteadOf` covers host-wide rewrites); `global.default_url_prefix` (per host, no default) makes a shorthand cloneable; matching uses the URL path without the host, so ssh aliases match and nested paths stay distinct (`bd-timew-q9o.6`, MH). |
+| 2026-11-03 | `init-project` never writes host settings: it reads `check_interval` and `idle_stop_hours` from `config.yaml` for the units it installs (flags override for those units only), and `bd-track config set <key> <value>` writes host settings explicitly. Supersedes the 2026-10-30 "`init-project` records its host keys in `config.yaml`" (`bd-timew-ekm`, MH). |
 | 2026-11-03 | One project flag: `--project <name-or-path>` on every single-project command (`start`/`stop`/`switch`/`status`/`resolve` included), accepted before or after the subcommand; a registry name resolves through the registry, an existing directory is used as given. `--project-dir` stays one release as a hidden alias with a deprecation warning; `--global` is unchanged. `bd` runs in the resolved root so a claim lands in the same project as its interval (`bd-timew-aji`, MH). |

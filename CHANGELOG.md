@@ -17,6 +17,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `--titles` look beads up there too. `--project` given to `init-project`, `servers`,
   `server-stop` or `idle-stop`, or together with `--global`, is now an error.
 
+- **`init-project` no longer writes host settings** (`bd-timew-ekm`): it used to rewrite
+  `idle_stop_hours` (from a prompt that defaulted to `4`, not the file's value) and
+  `check_interval` in `~/.config/bd-track/config.yaml` on every run, drifting a file a config
+  manager may own. It now reads both for the systemd units it installs;
+  `--check-interval` / `--idle-stop-hours` apply to those units only, and the idle-hours
+  prompt is gone.
+
+### Added
+
+- **`bd-track config set <key> <value>`** (`bd-timew-ekm`): writes one host setting into
+  `config.yaml` `global:`. The value is parsed as YAML, comments are kept, and a value that
+  fails validation is rolled back. Refused while host settings still come from a legacy
+  `repos.yaml`.
+
 ### Deprecated
 
 - **`--project-dir`**: use `--project`. It still works for one release, with a warning.
