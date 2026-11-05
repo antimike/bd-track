@@ -6,6 +6,21 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- **One project flag** (`bd-timew-aji`): `--project <name-or-path>` works on every
+  command that acts on one project, `start`, `stop`, `switch`, `status` and `resolve`
+  included (they used to ignore it and read the cwd), before or after the subcommand.
+  A registry name resolves through the registry; an existing directory is used as given,
+  registered or not. `start` and `stop` run `bd` in that project, so the claim and the
+  post-stop queue sweep land where the interval does; `queue clean`, `prune` and
+  `--titles` look beads up there too. `--project` given to `init-project`, `servers`,
+  `server-stop` or `idle-stop`, or together with `--global`, is now an error.
+
+### Deprecated
+
+- **`--project-dir`**: use `--project`. It still works for one release, with a warning.
+
 ## [0.8.1] - 2026-11-04
 
 Pause and resume tracking intervals, for idle and sleep hooks.

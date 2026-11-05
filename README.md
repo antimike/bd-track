@@ -159,6 +159,16 @@ A global `--session-id <id>` flag (and `$BD_TRACK_SESSION_ID` /
 `queue` subcommands accept `--scope <name>` (or `$BD_TRACK_SCOPE`) and
 `--titles`/`-t` to fetch and display bead titles inline.
 
+Every command that works on one project takes `--project <name-or-path>`, before or
+after the subcommand: a name from the [project registry](docs/registry-schema.md)
+(`projects.yaml`), or a directory, registered or not. Without it the project is the
+Beads workspace of the current directory. `bd-track --project api start <id>` claims
+and tracks the bead in `api` from any directory. `--global` instead covers every
+registered beads project, for `pause`, `resume`, `show`, `list`, `active` and `report`.
+The commands that span projects (`init-project`, `servers`, `server-stop`, `idle-stop`)
+refuse `--project`. The old `--project-dir <path>` still works for one release, with a
+deprecation warning.
+
 ### `queue clean` vs `queue prune`
 
 - **`clean`** is mechanical: it queries `bd` for the status of each entry and drops
@@ -178,7 +188,7 @@ to write):
 - **`bd-track migrate rename`** renames on-disk artifacts so the legacy
   read-fallback shims stop firing: the config/cache/state dirs, the `.beads`
   sidecar, the `<beads>/bd-timew` session logs, and `BD_TIMEW_*` → `BD_TRACK_*` env
-  rewrites. `--all-repos` sweeps every repo registered in `repos.yaml`. It is
+  rewrites. `--all-repos` sweeps every beads project in the project registry. It is
   idempotent and guards home/dotfile targets managed by chezmoi.
 - **`bd-track migrate import`** replays `timew export` into the JSONL log,
   preserving the historical timestamps, skipping open and bead-less intervals, and

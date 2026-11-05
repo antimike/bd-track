@@ -272,7 +272,10 @@ neither form is ignored with a warning.
 
 ## Resolving a project
 
-- **By name** (`--project <name>`): the key under `projects:`.
+- **By name** (`--project <name>`): the key under `projects:`. A registered name never falls
+  back to a same-named directory: with no known clone it is an error.
+- **By path** (`--project <dir>`): a registered `path`, else any existing directory, registered
+  or not (`bd-timew-aji`).
 - **By directory** (the current repo's project): `path` if set and equal, else the clone's `origin`
   matched against `remote`. A path-pinned project wins over a remote match for the same clone.
 - **Clone of a name**: `path` if set, else the cache, else a scan of the
@@ -350,3 +353,4 @@ implement.
 | 2026-11-02 | Dolt push refs are `refs/dolt/<host>/<database>`, host = `global.host_name` (default the short hostname): a project on two hosts pushed both to one ref, and the forced retry let the last host replace the other's copy. Ref per host, not branch per host: a Dolt remote keeps all branches in one store under one git ref, and `reset-data` rebuilds it from local HEAD, wiping other hosts' branches (`bd-timew-q9o.2`, MH). |
 | 2026-11-02 | The state export copies session event logs to `sessions/` beside the issues file (`sessions/<project>/` for a flat layout), new or grown files only, with no setting: they are billing data outside every other backup (`bd-timew-q9o.1`). |
 | 2026-11-03 | `remote` accepts any git URL or the `owner/repo` shorthand, still a string (no `remote.github`/`remote.ssh` subdict: the URL carries the protocol, `insteadOf` covers host-wide rewrites); `global.default_url_prefix` (per host, no default) makes a shorthand cloneable; matching uses the URL path without the host, so ssh aliases match and nested paths stay distinct (`bd-timew-q9o.6`, MH). |
+| 2026-11-03 | One project flag: `--project <name-or-path>` on every single-project command (`start`/`stop`/`switch`/`status`/`resolve` included), accepted before or after the subcommand; a registry name resolves through the registry, an existing directory is used as given. `--project-dir` stays one release as a hidden alias with a deprecation warning; `--global` is unchanged. `bd` runs in the resolved root so a claim lands in the same project as its interval (`bd-timew-aji`, MH). |

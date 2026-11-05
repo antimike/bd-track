@@ -26,7 +26,7 @@ to its spec instead of restating it.
 
 `--inbox DIR` names it directly. Otherwise it is `<root>/<project>`, where `<root>` is
 `$BD_TRACK_INBOX_ROOT`, else `$XDG_STATE_HOME/triage` (`~/.local/state/triage` when `XDG_STATE_HOME` is unset or relative). `<project>` is
-the [project registry](registry-schema.md#resolving-a-project) name of `--project-dir` or of the
+the [project registry](registry-schema.md#resolving-a-project) name of `--project` or of the
 current git repository (its `path`, else its `origin` matched against `remote`), so every clone
 and worktree of a project shares one inbox. An unregistered directory, or an unreadable registry
 (reported as a warning), falls back to the directory's basename.
@@ -34,7 +34,7 @@ and worktree of a project shares one inbox. An unregistered directory, or an unr
 ## Working the inbox interactively
 
 ```
-bd-track triage [--dry-run] [--inbox DIR] [--project-dir DIR]
+bd-track triage [--dry-run] [--inbox DIR] [--project NAME-OR-DIR]
 ```
 
 With no action, `triage` shows each open ticket in turn and asks what to do:
@@ -44,12 +44,14 @@ the ticket stays open, see below) or **[q]uit**. The loop is built only on `list
 `ask`, and re-reads the inbox after every action. `--dry-run` asks the same questions and prints
 each action instead of writing. It needs a terminal; scripts and agents use the commands below.
 
-The shared options (`--inbox`, `--project-dir`, `--dry-run`) go before or after the action.
+The shared options (`--inbox`, `--project`, `--dry-run`) go before or after the action.
+`--project` takes a registry name or a directory; the deprecated `--project-dir DIR` still
+works, with a warning.
 
 ## Asking about a ticket
 
 ```
-bd-track triage ask <ticket> <question> [--inbox DIR] [--project-dir DIR] [--dry-run]
+bd-track triage ask <ticket> <question> [--inbox DIR] [--project NAME-OR-DIR] [--dry-run]
 ```
 
 Appends a `## Triage YYYY-MM-DD` section with the question (what is unclear and who must answer)
@@ -60,7 +62,7 @@ promoted to its own `triage/<date>-<slug>.md` (its stamp's keys become frontmatt
 ## Listing tickets
 
 ```
-bd-track triage list [--json] [--inbox DIR] [--project-dir DIR]
+bd-track triage list [--json] [--inbox DIR] [--project NAME-OR-DIR]
 ```
 
 Lists the open tickets: files in `triage/` in name order, then `inbox.md` paragraphs. A file whose
@@ -94,7 +96,7 @@ title, with `-` where a ticket does not say.
 ```
 bd-track triage resolve <ticket> (--bead | --reject REASON | --duplicate ID | --done OUTCOME)
                         [--title T] [--description D] [--type T] [--priority N]
-                        [--inbox DIR] [--project-dir DIR] [--dry-run]
+                        [--inbox DIR] [--project NAME-OR-DIR] [--dry-run]
 ```
 
 `<ticket>` is a file name (with or without `.md`) or a quick note's `inbox-<hash>` id.
