@@ -10,7 +10,7 @@ Scope (see ``bd-timew-jy9``):
   * Per project:  .beads/bd-timew.yaml sidecar, <beads>/bd-timew session logs,
                   and ``BD_TIMEW_*`` → ``BD_TRACK_*`` env-var rewrites in
                   .envrc / .env / .envrc.local / mise.toml / .mise.toml
-  * ``--all-repos`` sweeps every repo registered in repos.yaml, not just cwd.
+  * ``--all-repos`` sweeps every beads project in the registry (projects.yaml), not just cwd.
 
 Safety: dry-run by default (``--apply`` to write); per-file ``.bak`` backups;
 chezmoi-managed home/dotfile targets are skipped with a warning (editing a

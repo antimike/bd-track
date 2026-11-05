@@ -6,11 +6,36 @@ import argparse
 import sys
 from pathlib import Path
 
-from bd_track.util import HelpFormatter, setup_logger
+from bd_track.util import HelpFormatter, root_log, setup_logger
 
 # Mirrors aggregate.POLICIES keys; duplicated here so argparse choices don't
 # force an eager import of the aggregator at CLI-startup time.
 _REPORT_POLICIES = ("billing", "machine", "wallclock")
+
+# Commands that work on no single project; --project given to them is an error, not ignored.
+_PROJECTLESS_COMMANDS = (
+    "init-project",
+    "idle-stop",
+    "run-service",
+    "servers",
+    "server-stop",
+)
+
+_INTERVAL_COMMANDS = (
+    "start",
+    "stop",
+    "pause",
+    "resume",
+    "show",
+    "cancel",
+    "amend",
+    "switch",
+    "list",
+    "status",
+    "active",
+    "report",
+    "resolve",
+)
 
 __doc_summary__ = """\
 bd-track: Beads time-tracking with project lifecycle management.
@@ -32,6 +57,33 @@ Resolution order for billing tuple (first match wins):
 """
 
 
+_PROJECT_HELP = (
+    "Project to act on: a registry name (projects.yaml) or a directory, registered or not. "
+    "Default: the Beads workspace of the current directory."
+)
+
+
+def _add_project_option(parser: argparse.ArgumentParser, *, legacy: bool = False) -> None:
+    """Accept ``--project`` after the subcommand too, plus the deprecated ``--project-dir``.
+
+    Both default to SUPPRESS so a subparser never resets a top-level ``--project`` to None.
+    """
+    parser.add_argument(
+        "--project",
+        metavar="<name-or-path>",
+        dest="project_scope",
+        default=argparse.SUPPRESS,
+        help=_PROJECT_HELP,
+    )
+    if legacy:
+        parser.add_argument(
+            "--project-dir",
+            dest="project_dir_alias",
+            default=argparse.SUPPRESS,
+            help=argparse.SUPPRESS,
+        )
+
+
 def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
     """Attach the ``triage <action>`` parser tree (the beads layer over a ticket inbox)."""
     p_triage = sub.add_parser(
@@ -45,7 +97,7 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
             "<inbox>/triage/inbox.md paragraphs. The inbox is --inbox, else "
             "$BD_TRACK_INBOX_ROOT/<project>, else $XDG_STATE_HOME/triage/<project> "
             "($XDG_STATE_HOME defaults to ~/.local/state), where <project> is the registry name of "
-            "--project-dir or of the current git repository (else its basename). "
+            "--project or of the current git repository (else its basename). "
             "See docs/triage.md."
         ),
         formatter_class=HelpFormatter,
@@ -60,13 +112,7 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
             default=default,
             help="The project's inbox directory (holds triage/ and done/).",
         )
-        parser.add_argument(
-            "--project-dir",
-            type=Path,
-            default=default,
-            help="Project root; names the inbox and is where beads are created. "
-            "Defaults to the current git repository.",
-        )
+        _add_project_option(parser, legacy=True)
         parser.add_argument(
             "--dry-run",
             action="store_true",
@@ -190,7 +236,7 @@ def _add_queue_parsers(sub: argparse._SubParsersAction) -> None:
         epilog=(
             "All <action> subcommands accept these common options:\n"
             "  --scope <name>      Queue scope (env: BD_TRACK_SCOPE; default: 'default')\n"
-            "  --project-dir PATH  Project root containing .beads/ (default: active workspace)\n"
+            "  --project <name-or-path>  Registry name or project directory (default: cwd)\n"
             "  --titles, -t        Show bead titles alongside IDs (slower; one bd call per bead)\n"
             "\n"
             "Use `bd-track queue <action> --help` for action-specific options."
@@ -209,12 +255,7 @@ def _add_queue_parsers(sub: argparse._SubParsersAction) -> None:
         default=None,
         help="Queue scope name. Resolved: --scope flag → $BD_TRACK_SCOPE → 'default'.",
     )
-    common.add_argument(
-        "--project-dir",
-        type=Path,
-        default=None,
-        help="Project root containing .beads/. Defaults to active workspace.",
-    )
+    _add_project_option(common, legacy=True)
     common.add_argument(
         "--titles",
         "-t",
@@ -393,17 +434,17 @@ def get_cli_arguments() -> argparse.Namespace:
     scope_group = parser.add_mutually_exclusive_group()
     scope_group.add_argument(
         "--project",
-        metavar="<slug-or-path>",
+        metavar="<name-or-path>",
         dest="project_scope",
         default=None,
-        help="Override project scope: resolve <slug-or-path> via repos.yaml name or path.",
+        help=_PROJECT_HELP + " Also accepted after the subcommand.",
     )
     scope_group.add_argument(
         "--global",
         action="store_true",
         dest="global_scope",
         default=False,
-        help="Operate across all repos registered in repos.yaml.",
+        help="Operate across every beads project in the project registry (projects.yaml).",
     )
 
     sub = parser.add_subparsers(
@@ -833,12 +874,7 @@ def get_cli_arguments() -> argparse.Namespace:
         help="Resolve and print the session id for this invocation context.",
         formatter_class=HelpFormatter,
     )
-    p_session_current.add_argument(
-        "--project-dir",
-        type=Path,
-        default=None,
-        help="Project root containing .beads/. Defaults to active workspace.",
-    )
+    _add_project_option(p_session_current, legacy=True)
 
     # -- cleanup -------------------------------------------------------------
     p_cleanup = sub.add_parser(
@@ -863,12 +899,7 @@ def get_cli_arguments() -> argparse.Namespace:
     p_cleanup.add_argument(
         "--commit", action="store_true", help="Run  bd dolt commit  before compacting."
     )
-    p_cleanup.add_argument(
-        "--project-dir",
-        type=Path,
-        default=None,
-        help="Project root containing .beads/. Defaults to active workspace.",
-    )
+    _add_project_option(p_cleanup, legacy=True)
 
     # -- init-project --------------------------------------------------------
     p_init = sub.add_parser(
@@ -936,12 +967,7 @@ def get_cli_arguments() -> argparse.Namespace:
         help="Scaffold a per-project .beads/bd-track.yaml from the packaged template.",
         formatter_class=HelpFormatter,
     )
-    p_config_init.add_argument(
-        "--project-dir",
-        type=Path,
-        default=None,
-        help="Project root containing .beads/. Defaults to active workspace.",
-    )
+    _add_project_option(p_config_init, legacy=True)
 
     # -- idle-stop -----------------------------------------------------------
     p_idle = sub.add_parser(
@@ -1000,17 +1026,13 @@ def get_cli_arguments() -> argparse.Namespace:
         ),
         formatter_class=HelpFormatter,
     )
-    p_migrate_rename.add_argument(
-        "--project-dir",
-        type=Path,
-        default=None,
-        help="Project root containing .beads/. Defaults to active workspace.",
-    )
+    _add_project_option(p_migrate_rename, legacy=True)
     p_migrate_rename.add_argument(
         "--all-repos",
         action="store_true",
         default=False,
-        help="Sweep every repo registered in repos.yaml, not just the current one.",
+        help="Sweep every beads project in the project registry (projects.yaml), "
+        "not just the current one.",
     )
     p_migrate_rename.add_argument(
         "--apply",
@@ -1059,12 +1081,7 @@ def get_cli_arguments() -> argparse.Namespace:
         ),
         formatter_class=HelpFormatter,
     )
-    p_migrate_import.add_argument(
-        "--project-dir",
-        type=Path,
-        default=None,
-        help="Project root containing .beads/. Defaults to active workspace.",
-    )
+    _add_project_option(p_migrate_import, legacy=True)
     p_migrate_import.add_argument(
         "--from-file",
         type=Path,
@@ -1078,6 +1095,10 @@ def get_cli_arguments() -> argparse.Namespace:
         help="Perform the import (default is a dry-run preview).",
     )
 
+    # The interval commands read the top-level --project; accept it after them as well.
+    for name in _INTERVAL_COMMANDS:
+        _add_project_option(sub.choices[name])
+
     # -- queue (parent) + push/unshift/pop/peek/list/remove/clear/clean/generate/prune
     _add_queue_parsers(sub)
 
@@ -1087,7 +1108,7 @@ def get_cli_arguments() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _dispatch_queue(args: argparse.Namespace) -> None:
+def _dispatch_queue(args: argparse.Namespace, project_dir: Path | None) -> None:
     """Route ``bd-track queue <action>`` to the right queue.py function."""
     action = args.queue_action
 
@@ -1106,7 +1127,7 @@ def _dispatch_queue(args: argparse.Namespace) -> None:
             action,
             ids=ids,
             scope_arg=args.scope,
-            project_dir=args.project_dir,
+            project_dir=project_dir,
             titles=args.titles,
         )
         return
@@ -1114,7 +1135,7 @@ def _dispatch_queue(args: argparse.Namespace) -> None:
     if action == "clean":
         from bd_track.queue import cmd_clean
 
-        cmd_clean(scope_arg=args.scope, project_dir=args.project_dir)
+        cmd_clean(scope_arg=args.scope, project_dir=project_dir)
         return
 
     if action == "generate":
@@ -1123,7 +1144,7 @@ def _dispatch_queue(args: argparse.Namespace) -> None:
         statuses = [s.strip() for s in args.status.split(",") if s.strip()]
         cmd_generate(
             scope_arg=args.scope,
-            project_dir=args.project_dir,
+            project_dir=project_dir,
             statuses=statuses,
             labels_all=args.label,
             labels_any=args.label_any,
@@ -1139,14 +1160,32 @@ def _dispatch_queue(args: argparse.Namespace) -> None:
 
         cmd_prune(
             scope_arg=args.scope,
-            project_dir=args.project_dir,
+            project_dir=project_dir,
             yes=args.yes,
         )
         return
 
 
 def _resolve_project_scope(args: argparse.Namespace) -> Path | None:
-    """Return the project_dir implied by ``--project``, or ``None``."""
+    """Return the project root named by ``--project`` (or ``--project-dir``), else ``None``.
+
+    ``--project-dir`` is the deprecated spelling: it warns, and keeps its old meaning (a path
+    used as given, no registry lookup).
+    """
+    legacy = getattr(args, "project_dir_alias", None)
+    if legacy is not None:
+        root_log.warning(
+            "--project-dir is deprecated and will be removed in a future release; "
+            "use --project <name-or-path>"
+        )
+        if args.project_scope:
+            sys.exit("bd-track: give --project or --project-dir, not both")
+    if (args.project_scope or legacy is not None) and args.global_scope:
+        sys.exit("bd-track: --project and --global are mutually exclusive")
+    if (args.project_scope or legacy is not None) and args.cmd in _PROJECTLESS_COMMANDS:
+        sys.exit(f"bd-track: --project does not apply to `{args.cmd}`")
+    if legacy is not None:
+        return Path(legacy).expanduser()
     if args.project_scope:
         from bd_track.util import resolve_project_dir
 
@@ -1176,17 +1215,24 @@ def main() -> None:
         args.loglevel,
         enable_file_handler=args.cmd in ("cleanup", "run-service", "idle-stop"),
     )
+    project_dir = _resolve_project_scope(args)
 
     # Late imports keep CLI startup snappy and avoid loading heavyweight modules
     # for unrelated subcommands.
     if args.cmd == "start":
         from bd_track.track import cmd_start
 
-        cmd_start(args.issue_id, session_id=args.session_id)
+        cmd_start(args.issue_id, session_id=args.session_id, project_dir=project_dir)
     elif args.cmd == "stop":
         from bd_track.track import cmd_stop
 
-        cmd_stop(args.issue_id, clean=args.clean, session_id=args.session_id, at=args.at)
+        cmd_stop(
+            args.issue_id,
+            clean=args.clean,
+            session_id=args.session_id,
+            at=args.at,
+            project_dir=project_dir,
+        )
     elif args.cmd in ("pause", "resume"):
         from bd_track.track import cmd_pause, cmd_resume
 
@@ -1195,7 +1241,7 @@ def main() -> None:
             all_sessions=args.all_sessions,
             dry_run=args.dry_run,
             session_id=args.session_id,
-            project_dir=_resolve_project_scope(args),
+            project_dir=project_dir,
             global_scope=args.global_scope,
         )
     elif args.cmd == "show":
@@ -1206,7 +1252,7 @@ def main() -> None:
             fmt=args.fmt,
             pretty=args.pretty,
             session_id=args.session_id,
-            project_dir=_resolve_project_scope(args),
+            project_dir=project_dir,
             global_scope=args.global_scope,
         )
     elif args.cmd == "cancel":
@@ -1216,7 +1262,7 @@ def main() -> None:
             args.interval_id,
             yes=args.yes,
             session_id=args.session_id,
-            project_dir=_resolve_project_scope(args),
+            project_dir=project_dir,
         )
     elif args.cmd == "amend":
         from bd_track.track import cmd_amend
@@ -1233,12 +1279,17 @@ def main() -> None:
             role=args.role,
             group_id=args.group_id,
             session_id=args.session_id,
-            project_dir=_resolve_project_scope(args),
+            project_dir=project_dir,
         )
     elif args.cmd == "switch":
         from bd_track.track import cmd_switch
 
-        cmd_switch(args.issue_id, from_issue_id=args.from_issue_id, session_id=args.session_id)
+        cmd_switch(
+            args.issue_id,
+            from_issue_id=args.from_issue_id,
+            session_id=args.session_id,
+            project_dir=project_dir,
+        )
     elif args.cmd == "list":
         from bd_track.track import cmd_list
 
@@ -1253,21 +1304,21 @@ def main() -> None:
             pretty=args.pretty,
             sort_by=args.sort_by,
             desc=args.desc,
-            project_dir=_resolve_project_scope(args),
+            project_dir=project_dir,
             global_scope=args.global_scope,
             session_id=args.session_id,
         )
     elif args.cmd == "status":
         from bd_track.track import cmd_status
 
-        cmd_status(session_id=args.session_id)
+        cmd_status(session_id=args.session_id, project_dir=project_dir)
     elif args.cmd == "active":
         from bd_track.track import cmd_active
 
         cmd_active(
             fmt=args.fmt,
             session_id=args.session_id,
-            project_dir=_resolve_project_scope(args),
+            project_dir=project_dir,
             global_scope=args.global_scope,
         )
     elif args.cmd == "report":
@@ -1279,22 +1330,22 @@ def main() -> None:
             since=args.since,
             until=args.until,
             session_id=args.session_id,
-            project_dir=_resolve_project_scope(args),
+            project_dir=project_dir,
             global_scope=args.global_scope,
         )
     elif args.cmd == "resolve":
         from bd_track.track import cmd_start
 
-        cmd_start(args.issue_id, dry_run=True, session_id=args.session_id)
+        cmd_start(args.issue_id, dry_run=True, session_id=args.session_id, project_dir=project_dir)
     elif args.cmd == "session":
         if args.session_action == "current":
             from bd_track.session import cmd_session_current
 
-            cmd_session_current(project_dir=args.project_dir, explicit=args.session_id)
+            cmd_session_current(project_dir=project_dir, explicit=args.session_id)
     elif args.cmd == "cleanup":
         from bd_track.project import cmd_cleanup
 
-        cmd_cleanup(args.days, commit=args.commit, project_dir=args.project_dir)
+        cmd_cleanup(args.days, commit=args.commit, project_dir=project_dir)
     elif args.cmd == "init-project":
         from bd_track.project import cmd_init_project
 
@@ -1322,7 +1373,7 @@ def main() -> None:
         if args.config_action == "init":
             from bd_track.project import cmd_config_init
 
-            cmd_config_init(project_dir=args.project_dir)
+            cmd_config_init(project_dir=project_dir)
     elif args.cmd == "idle-stop":
         from bd_track.server import cmd_idle_stop
 
@@ -1344,7 +1395,7 @@ def main() -> None:
             from bd_track.migrate import cmd_migrate_rename
 
             cmd_migrate_rename(
-                project_dir=args.project_dir,
+                project_dir=project_dir,
                 all_repos=args.all_repos,
                 apply=args.apply,
                 backup=args.backup,
@@ -1357,19 +1408,17 @@ def main() -> None:
             from bd_track.migrate import cmd_migrate_import
 
             cmd_migrate_import(
-                project_dir=args.project_dir,
+                project_dir=project_dir,
                 from_file=args.from_file,
                 apply=args.apply,
             )
     elif args.cmd == "queue":
-        _dispatch_queue(args)
+        _dispatch_queue(args, project_dir)
     elif args.cmd == "triage":
         if args.triage_action is None:
             from bd_track.triage import cmd_triage_interactive
 
-            cmd_triage_interactive(
-                inbox=args.inbox, project_dir=args.project_dir, dry_run=args.dry_run
-            )
+            cmd_triage_interactive(inbox=args.inbox, project_dir=project_dir, dry_run=args.dry_run)
         elif args.triage_action == "ask":
             from bd_track.triage import cmd_triage_ask
 
@@ -1377,13 +1426,13 @@ def main() -> None:
                 args.ticket_id,
                 args.question,
                 inbox=args.inbox,
-                project_dir=args.project_dir,
+                project_dir=project_dir,
                 dry_run=args.dry_run,
             )
         elif args.triage_action == "list":
             from bd_track.triage import cmd_triage_list
 
-            cmd_triage_list(inbox=args.inbox, project_dir=args.project_dir, as_json=args.as_json)
+            cmd_triage_list(inbox=args.inbox, project_dir=project_dir, as_json=args.as_json)
         elif args.triage_action == "resolve":
             from bd_track.triage import cmd_triage_resolve
 
@@ -1402,6 +1451,6 @@ def main() -> None:
                 bead_type=args.bead_type,
                 priority=args.priority,
                 inbox=args.inbox,
-                project_dir=args.project_dir,
+                project_dir=project_dir,
                 dry_run=args.dry_run,
             )
