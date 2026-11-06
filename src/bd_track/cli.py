@@ -945,9 +945,9 @@ def get_cli_arguments() -> argparse.Namespace:
     # -- cleanup -------------------------------------------------------------
     p_cleanup = sub.add_parser(
         "cleanup",
-        help="Compact Dolt history and run GC; optionally commit first.",
+        help="Commit, compact Dolt history and run GC.",
         description=(
-            "Commit (with --commit), compact and GC the project's Beads database, then export "
+            "Commit, compact and GC the project's Beads database, then export "
             "its issues to a state repo when global.state_export / beads.state_repo turn that "
             "on (bd-track never commits or pushes the state repo), then push the Dolt database "
             "to a private git repo under refs/dolt/<host>/<database> (host: "
@@ -955,7 +955,9 @@ def get_cli_arguments() -> argparse.Namespace:
             "beads.dolt_push turn that on. The push has a hard timeout "
             "(global.dolt_push_timeout, default 120 s) and refuses public repos and the "
             "project's own code remotes. Dolt pushes have stalled on WSL2 network stacks: set "
-            "global.dolt_push: never on such hosts. Keys: docs/registry-schema.md."
+            "global.dolt_push: never on such hosts. Keys: docs/registry-schema.md. "
+            "bd compact drops uncommitted bd changes, so cleanup commits first and stops "
+            "(exit 1) before compacting if the commit fails."
         ),
         formatter_class=HelpFormatter,
     )
@@ -963,7 +965,11 @@ def get_cli_arguments() -> argparse.Namespace:
         "--days", type=int, default=7, help="Retain this many days of Dolt commit history."
     )
     p_cleanup.add_argument(
-        "--commit", action="store_true", help="Run  bd dolt commit  before compacting."
+        "--commit",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Run  bd dolt commit  before compacting (the default; --commit is accepted for "
+        "compatibility). --no-commit skips it, and compact then discards uncommitted changes.",
     )
     _add_project_option(p_cleanup)
 
@@ -1444,9 +1450,12 @@ def main() -> None:
 
             cmd_session_current(project_dir=project_dir, explicit=args.session_id)
     elif args.cmd == "cleanup":
-        from bd_track.project import cmd_cleanup
+        from bd_track.project import CleanupError, cmd_cleanup
 
-        cmd_cleanup(args.days, commit=args.commit, project_dir=project_dir)
+        try:
+            cmd_cleanup(args.days, commit=args.commit, project_dir=project_dir)
+        except CleanupError as err:
+            sys.exit(f"bd-track: {err}")
     elif args.cmd == "init-project":
         from bd_track.project import cmd_init_project
 

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import datetime as dt
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -237,11 +238,13 @@ def stub_bd(monkeypatch):
     from bd_track import project
 
     calls: list[list[str]] = []
-    outcome = {"export_rc": 0}
+    outcome = {"export_rc": 0, "commit_rc": 0}
 
     def fake_run(argv, check=False, capture=False, cwd=None):
         calls.append(argv)
         rc = 0
+        if argv[:3] == ["bd", "dolt", "commit"]:
+            rc = outcome["commit_rc"]
         if argv[:2] == ["bd", "export"]:
             rc = outcome["export_rc"]
             Path(argv[argv.index("-o") + 1]).write_text('{"id": "amo-1"}\n')
@@ -251,7 +254,7 @@ def stub_bd(monkeypatch):
     return calls, outcome
 
 
-def _cleanup(tmp_path: Path, beads: dict, host: dict, monkeypatch):
+def _cleanup(tmp_path: Path, beads: dict, host: dict, monkeypatch, **kwargs):
     from bd_track import events, project, registry
     from bd_track.registry import Project
 
@@ -272,7 +275,9 @@ def _cleanup(tmp_path: Path, beads: dict, host: dict, monkeypatch):
             **host,
         },
     )
-    project.cmd_cleanup(7, project_dir=root, project=Project("amo", path=root, beads=beads))
+    project.cmd_cleanup(
+        7, project_dir=root, project=Project("amo", path=root, beads=beads), **kwargs
+    )
 
 
 def test_cleanup_exports_after_gc(tmp_path: Path, stub_bd, monkeypatch):
@@ -282,10 +287,66 @@ def test_cleanup_exports_after_gc(tmp_path: Path, stub_bd, monkeypatch):
     _cleanup(
         tmp_path, {"prefix": "amo", "state_repo": True}, {"state_repo": str(state)}, monkeypatch
     )
-    assert [c[:2] for c in calls] == [["bd", "compact"], ["bd", "gc"], ["bd", "export"]]
+    assert [c[:2] for c in calls] == [
+        ["bd", "dolt"],
+        ["bd", "compact"],
+        ["bd", "gc"],
+        ["bd", "export"],
+    ]
     assert "--include-memories" in calls[-1]
     assert (state / "amo" / "issues.jsonl").read_text() == '{"id": "amo-1"}\n'
     assert not list((state / "amo").glob(".*.tmp"))
+
+
+def test_cleanup_commits_before_compact_by_default(tmp_path: Path, stub_bd, monkeypatch):
+    calls, _ = stub_bd
+    _cleanup(tmp_path, {"prefix": "amo"}, {}, monkeypatch)
+    assert calls[0] == ["bd", "dolt", "commit"]
+    assert calls[1][:2] == ["bd", "compact"]
+
+
+def test_cleanup_failed_commit_stops_before_compact(tmp_path: Path, stub_bd, monkeypatch):
+    from bd_track.project import CleanupError
+
+    calls, outcome = stub_bd
+    outcome["commit_rc"] = 1
+    with pytest.raises(CleanupError, match="dolt commit failed"):
+        _cleanup(tmp_path, {"prefix": "amo"}, {}, monkeypatch)
+    assert calls == [["bd", "dolt", "commit"]]
+
+
+def test_cleanup_no_commit_skips_the_commit(tmp_path: Path, stub_bd, monkeypatch):
+    calls, _ = stub_bd
+    _cleanup(tmp_path, {"prefix": "amo"}, {}, monkeypatch, commit=False)
+    assert ["bd", "dolt"] not in [c[:2] for c in calls]
+    assert calls[0][:2] == ["bd", "compact"]
+
+
+@pytest.mark.parametrize(
+    ("flags", "expected"), [((), True), (("--commit",), True), (("--no-commit",), False)]
+)
+def test_cleanup_cli_commit_flag(monkeypatch, flags, expected):
+    from bd_track import cli, project
+
+    seen = {}
+    monkeypatch.setattr(
+        project, "cmd_cleanup", lambda days, commit, project_dir: seen.update(commit=commit)
+    )
+    monkeypatch.setattr(sys, "argv", ["bd-track", "cleanup", *flags])
+    cli.main()
+    assert seen["commit"] is expected
+
+
+def test_cleanup_cli_exits_nonzero_on_cleanup_error(monkeypatch):
+    from bd_track import cli, project
+
+    def fail(days, commit, project_dir):
+        raise project.CleanupError("dolt commit failed in /x: boom")
+
+    monkeypatch.setattr(project, "cmd_cleanup", fail)
+    monkeypatch.setattr(sys, "argv", ["bd-track", "cleanup"])
+    with pytest.raises(SystemExit, match="bd-track: dolt commit failed"):
+        cli.main()
 
 
 def test_cleanup_export_off_by_default(tmp_path: Path, stub_bd, monkeypatch):
@@ -343,7 +404,7 @@ def test_cleanup_pushes_after_export(tmp_path: Path, stub_bd, monkeypatch):
     _cleanup(
         tmp_path, {"prefix": "amo", "state_repo": True}, {"state_repo": str(state)}, monkeypatch
     )
-    assert pushed == [("amo", 3)]  # after compact, gc and export
+    assert pushed == [("amo", 4)]  # after commit, compact, gc and export
 
 
 # ---------------------------------------------------------------------------

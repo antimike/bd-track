@@ -773,10 +773,14 @@ def _export_sessions(sources: list[Path], dest_dir: Path, log) -> None:
     log.info("export: %d session log(s) copied to %s", copied, dest_dir)
 
 
+class CleanupError(Exception):
+    """A cleanup step failed in a way that makes the remaining steps unsafe."""
+
+
 def cmd_cleanup(
     days: int,
     *,
-    commit: bool = False,
+    commit: bool = True,
     project_dir: Path | None = None,
     project=None,
     pushed: set[str] | None = None,
@@ -786,6 +790,9 @@ def cmd_cleanup(
     ``project`` is its registry entry when the caller has it (the cleanup service); otherwise
     it is looked up by directory for the state export and Dolt push steps. ``pushed`` is the
     cleanup service's set of databases already pushed this run (see ``doltpush.push_project``).
+
+    ``bd compact`` rewrites history and drops an uncommitted working set (``dolt.auto-commit
+    batch``), so a failed commit raises ``CleanupError`` before compact runs.
     """
     beads_dir = find_beads_dir(project_dir)
     project_root = beads_dir.parent.resolve()
@@ -799,11 +806,14 @@ def cmd_cleanup(
         log.info("Phase 1/5: dolt commit")
         result = run(["bd", "dolt", "commit"], check=False, capture=True, cwd=project_root)
         if result.returncode != 0:
-            log.warning("dolt commit: %s", result.stderr.strip() or result.stdout.strip())
-        else:
-            log.info("dolt commit: %s", result.stdout.strip())
+            message = result.stderr.strip() or result.stdout.strip()
+            log.error("dolt commit failed, skipping compact and the later steps: %s", message)
+            raise CleanupError(f"dolt commit failed in {project_root}: {message}")
+        log.info("dolt commit: %s", result.stdout.strip())
     else:
-        log.info("Phase 1/5: dolt commit (skipped — pass --commit to include)")
+        log.warning(
+            "Phase 1/5: dolt commit skipped (--no-commit); compact discards uncommitted changes"
+        )
 
     log.info("Phase 2/5: compact --days %d", days)
     result = run(
@@ -899,6 +909,8 @@ def cmd_run_service() -> None:
             )
             state.setdefault(path, {})["last_run"] = now.isoformat()
             _save_cleanup_state(state)
+        except CleanupError as err:
+            cleanup_log.error("cleanup stopped for %s: %s", path, err)
         except Exception:
             cleanup_log.exception("cleanup failed for %s", path)
 

@@ -570,6 +570,22 @@ def test_run_service_uses_registry_settings(two_projects, tmp_path: Path, monkey
     assert calls == [(chz, 3), (amo, 7)]
 
 
+def test_run_service_failed_commit_is_not_recorded_as_run(two_projects, monkeypatch):
+    from bd_track import project
+
+    saved = []
+    monkeypatch.setattr(project, "_load_cleanup_state", dict)
+    monkeypatch.setattr(project, "_save_cleanup_state", lambda state: saved.append(dict(state)))
+
+    def cleanup(days, commit, project_dir, project, pushed):
+        raise CleanupError("dolt commit failed")
+
+    CleanupError = project.CleanupError
+    monkeypatch.setattr(project, "cmd_cleanup", cleanup)
+    project.cmd_run_service()  # logs each project, does not raise
+    assert saved == []
+
+
 def test_run_service_logs_broken_registry(home: Path, monkeypatch):
     from bd_track import project
 
