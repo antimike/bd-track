@@ -6,6 +6,20 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-05
+
+One `--project` flag for every single-project command, XDG base directories honoured,
+and `init-project` no longer rewrites host settings (new `config set`).
+
+### Breaking
+
+- **XDG base directories are honoured** (`bd-timew-h31`): every config, cache, state and
+  data path, the default registry (`projects.yaml`) and the systemd user unit directory
+  now resolve through `$XDG_CONFIG_HOME`, `$XDG_CACHE_HOME`, `$XDG_STATE_HOME` and
+  `$XDG_DATA_HOME` when set to an absolute path (unset, empty or relative values fall back
+  to the `$HOME` defaults, as before). A host that sets one of these to a non-default
+  location will find bd-track reading and writing there: move the existing files over.
+
 ### Changed
 
 - **One project flag** (`bd-timew-aji`): `--project <name-or-path>` works on every
@@ -15,14 +29,17 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   registered or not. `start` and `stop` run `bd` in that project, so the claim and the
   post-stop queue sweep land where the interval does; `queue clean`, `prune` and
   `--titles` look beads up there too. `--project` given to `init-project`, `servers`,
-  `server-stop` or `idle-stop`, or together with `--global`, is now an error.
+  `server-stop`, `idle-stop`, `run-service` or `config set`, or together with `--global`,
+  is now an error, as is a registered name whose clone is not found on this host (pass
+  its directory instead).
 
 - **`init-project` no longer writes host settings** (`bd-timew-ekm`): it used to rewrite
   `idle_stop_hours` (from a prompt that defaulted to `4`, not the file's value) and
   `check_interval` in `~/.config/bd-track/config.yaml` on every run, drifting a file a config
   manager may own. It now reads both for the systemd units it installs;
-  `--check-interval` / `--idle-stop-hours` apply to those units only, and the idle-hours
-  prompt is gone.
+  `--check-interval` / `--idle-stop-hours` apply to those units only (`--check-interval`
+  now defaults to the host's `check_interval`, not `daily`), and the idle-hours prompt is
+  gone.
 
 ### Added
 
@@ -394,7 +411,8 @@ time-tracking workflow into a multi-module Python package.
   v0.2.0.
 - systemd user units for cleanup and idle-stop timers.
 
-[Unreleased]: https://github.com/antimike/bd-track/compare/v0.8.1...HEAD
+[Unreleased]: https://github.com/antimike/bd-track/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/antimike/bd-track/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/antimike/bd-track/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/antimike/bd-track/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/antimike/bd-track/compare/v0.6.0...v0.7.0
