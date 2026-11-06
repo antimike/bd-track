@@ -524,8 +524,142 @@ def cmd_cancel(
 
 
 # ---------------------------------------------------------------------------
+# add
+# ---------------------------------------------------------------------------
+
+
+def cmd_add(
+    issue_id: str,
+    *,
+    start: str,
+    stop: str,
+    actor: str | None = None,
+    role: str | None = None,
+    group_id: str | None = None,
+    dry_run: bool = False,
+    session_id: str | None = None,
+    project_dir: Path | None = None,
+) -> None:
+    """Record a closed interval with past times on ``issue_id``.
+
+    Unlike ``start``, it does not claim the bead or touch any open interval: it only
+    appends a start/stop pair, tagged with the bead's resolved billing tuple.
+    """
+    beads_dir = find_beads_dir(project_dir)
+    project_root = beads_dir.parent
+    start_iso = _parse_past(start, "--start")
+    stop_iso = _parse_past(stop, "--stop")
+    t_start, t_stop = dt.datetime.fromisoformat(start_iso), dt.datetime.fromisoformat(stop_iso)
+    if t_stop <= t_start:
+        root_log.error("stop must be after start (%s >= %s)", stop_iso, start_iso)
+        sys.exit(1)
+
+    issue = get_issue(issue_id, cwd=project_root)
+    tuple_ = resolve_tuple(issue.get("labels") or [], load_sidecar(beads_dir))
+    tags = _build_tags(tuple_)
+
+    now = dt.datetime.now().astimezone()
+    for iv in load_intervals(log_dir(project_root)):
+        if iv.bead != issue_id or iv.status == "cancelled" or iv.start is None:
+            continue
+        iv_stop = dt.datetime.fromisoformat(iv.stop) if iv.stop else now
+        if dt.datetime.fromisoformat(iv.start) < t_stop and t_start < iv_stop:
+            root_log.warning(
+                "overlaps interval %s (%s → %s) on %s",
+                iv.interval[:8],
+                iv.start,
+                iv.stop or "(open)",
+                issue_id,
+            )
+
+    root_log.info("Issue:  %s  %s", issue.get("id", "?"), issue.get("title", ""))
+    root_log.info("Span:   %s → %s (%s)", start_iso, stop_iso, _format_duration(t_stop - t_start))
+    root_log.info("Tags:   %s", ", ".join(tags) or "(none)")
+    if dry_run:
+        return
+
+    sid = resolve_session_id(project_root, explicit=session_id)
+    provenance = resolve_provenance(group_id=group_id, actor=actor, role=role)
+    interval = start_interval(
+        issue_id, tags, session_id=sid, ts=start_iso, project_dir=project_root, **provenance
+    )
+    stop_interval(interval, session_id=sid, ts=stop_iso, project_dir=project_root)
+    root_log.info("Added interval %s  [session %s]", interval[:8], sid)
+
+
+# ---------------------------------------------------------------------------
 # amend
 # ---------------------------------------------------------------------------
+
+
+def _parse_past(value: str, flag: str) -> str:
+    """Parse a user datetime for ``flag``; exit unless it is valid and not in the future."""
+    from bd_track.util import parse_datetime
+
+    try:
+        parsed = parse_datetime(value)
+    except ValueError as exc:
+        root_log.error("%s: %s", flag, exc)
+        sys.exit(1)
+    if parsed > dt.datetime.now().astimezone():
+        root_log.error("%s timestamp is in the future: %s", flag, parsed.isoformat())
+        sys.exit(1)
+    return parsed.isoformat(timespec="seconds")
+
+
+def _split(
+    resolved_id: str,
+    iv: Interval,
+    *,
+    split_at: str,
+    resume_at: str,
+    session_id: str | None,
+    project_root: Path,
+) -> None:
+    """Cut ``[split_at, resume_at)`` out of ``iv``: it stops at ``split_at`` and a new
+    interval with the same bead, tags and provenance runs from ``resume_at`` to its old stop.
+
+    An open interval's second part stays open, and a paused one's second part keeps the
+    pause, so the owning session's next ``stop`` or ``resume`` acts on it. The second part
+    is written to the original interval's session log; the correction to the caller's.
+    """
+    t1 = _parse_past(split_at, "--split-at")
+    t2 = _parse_past(resume_at, "--resume-at")
+    start = dt.datetime.fromisoformat(iv.start) if iv.start else None
+    if start is not None and dt.datetime.fromisoformat(t1) <= start:
+        root_log.error("--split-at must be after the interval's start (%s)", iv.start)
+        sys.exit(1)
+    if dt.datetime.fromisoformat(t2) <= dt.datetime.fromisoformat(t1):
+        root_log.error("--resume-at must be after --split-at (%s >= %s)", t1, t2)
+        sys.exit(1)
+    if iv.stop and dt.datetime.fromisoformat(t2) >= dt.datetime.fromisoformat(iv.stop):
+        root_log.error("--resume-at must be before the interval's stop (%s)", iv.stop)
+        sys.exit(1)
+
+    sid = resolve_session_id(project_root, explicit=session_id)
+    owner = iv.session or sid
+    correct_interval(
+        resolved_id,
+        session_id=sid,
+        stop=t1,
+        paused=False if iv.paused else None,
+        project_dir=project_root,
+    )
+    new = start_interval(
+        iv.bead or "",
+        iv.tags,
+        session_id=owner,
+        group_id=iv.group_id,
+        actor=iv.actor,
+        role=iv.role,
+        ts=t2,
+        project_dir=project_root,
+    )
+    if iv.stop:
+        stop_interval(new, session_id=owner, ts=iv.stop, paused=iv.paused, project_dir=project_root)
+    root_log.info("Split interval %s: %s → %s", resolved_id[:8], iv.start, t1)
+    suffix = " (paused)" if iv.paused else ""
+    root_log.info("New interval %s:   %s → %s%s", new[:8], t2, iv.stop or "(open)", suffix)
 
 
 def cmd_amend(
@@ -533,6 +667,8 @@ def cmd_amend(
     *,
     start: str | None = None,
     stop: str | None = None,
+    split_at: str | None = None,
+    resume_at: str | None = None,
     add_tags: list[str] | None = None,
     remove_tags: list[str] | None = None,
     tag_ops: list[str] | None = None,
@@ -543,7 +679,11 @@ def cmd_amend(
     session_id: str | None = None,
     project_dir: Path | None = None,
 ) -> None:
-    """Correct an existing interval's timestamps, tags, or provenance fields."""
+    """Correct an existing interval's timestamps, tags, or provenance fields.
+
+    ``split_at`` + ``resume_at`` instead split the interval in two around an idle gap
+    (see ``_split``); they cannot be combined with the other corrections.
+    """
     from bd_track.util import parse_datetime
 
     project_root = _project_root(project_dir)
@@ -553,6 +693,16 @@ def cmd_amend(
     if incremental and tags_csv is not None:
         root_log.error("--tags cannot be combined with --add-tag/--remove-tag/--tag")
         sys.exit(1)
+
+    splitting = split_at is not None or resume_at is not None
+    if splitting:
+        if split_at is None or resume_at is None:
+            root_log.error("--split-at and --resume-at must be given together")
+            sys.exit(1)
+        others = (start, stop, tags_csv, actor, role, group_id)
+        if incremental or any(v is not None for v in others):
+            root_log.error("--split-at/--resume-at cannot be combined with other amend options")
+            sys.exit(1)
 
     # Find interval by full ULID or unique prefix.
     all_intervals = {iv.interval: iv for iv in load_intervals(log_dir(project_root))}
@@ -571,6 +721,17 @@ def cmd_amend(
             "interval %s is cancelled; cannot amend a cancelled interval", resolved_id[:8]
         )
         sys.exit(1)
+
+    if splitting:
+        _split(
+            resolved_id,
+            iv,
+            split_at=split_at,
+            resume_at=resume_at,
+            session_id=session_id,
+            project_root=project_root,
+        )
+        return
 
     # Parse timestamps.
     start_iso: str | None = None

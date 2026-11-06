@@ -46,6 +46,7 @@ _INTERVAL_COMMANDS = (
     "resume",
     "show",
     "cancel",
+    "add",
     "amend",
     "switch",
     "list",
@@ -623,10 +624,47 @@ def get_cli_arguments() -> argparse.Namespace:
         help="Skip confirmation prompt.",
     )
 
+    # -- add -----------------------------------------------------------------
+    p_add = sub.add_parser(
+        "add",
+        help="Record a closed interval with past times on a bead (no claim).",
+        description=(
+            "Appends a start/stop pair with the given past times, tagged with the "
+            "bead's resolved billing tuple, to the current session's log. Unlike "
+            "start, it does not claim the bead, change its status, or stop any open "
+            "interval. Warns when the span overlaps another interval on the same bead."
+        ),
+        formatter_class=HelpFormatter,
+    )
+    p_add.add_argument("issue_id", metavar="<issue-id>")
+    p_add.add_argument(
+        "--start",
+        metavar="<datetime>",
+        required=True,
+        help="Interval start (natural language or ISO-8601).",
+    )
+    p_add.add_argument(
+        "--stop",
+        metavar="<datetime>",
+        required=True,
+        help="Interval stop (natural language or ISO-8601; not in the future).",
+    )
+    p_add.add_argument("--actor", default=None, metavar="<str>", help="Actor field.")
+    p_add.add_argument("--role", default=None, metavar="<str>", help="Role field.")
+    p_add.add_argument(
+        "--group-id", dest="group_id", default=None, metavar="<str>", help="Group_id field."
+    )
+    p_add.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Print the interval without writing it.",
+    )
+
     # -- amend ---------------------------------------------------------------
     p_amend = sub.add_parser(
         "amend",
-        help="Correct an existing interval's timestamps, tags, or provenance.",
+        help="Correct an existing interval's timestamps, tags, or provenance; or split it.",
         description=(
             "Appends a correction event for the given interval ULID (or unique "
             "8-character prefix), overriding any subset of start/stop timestamps, "
@@ -638,7 +676,11 @@ def get_cli_arguments() -> argparse.Namespace:
             "  --add-tag/--remove-tag  explicit incremental edits (repeatable)\n"
             "  --tag +foo / --tag ~foo  shorthand; ~ avoids argparse - collision\n"
             "  --tags foo,bar,...       wholesale replace (comma-delimited)\n"
-            "--tags is mutually exclusive with --add-tag/--remove-tag/--tag."
+            "--tags is mutually exclusive with --add-tag/--remove-tag/--tag.\n\n"
+            "Splitting: --split-at T1 --resume-at T2 removes the gap [T1, T2) (e.g. "
+            "overnight idle time): the interval stops at T1 and a new interval with "
+            "the same bead, tags and provenance runs from T2 to its old stop. An open "
+            "interval's second part stays open. Not combinable with other options."
         ),
         formatter_class=HelpFormatter,
     )
@@ -658,6 +700,18 @@ def get_cli_arguments() -> argparse.Namespace:
         metavar="<datetime>",
         default=None,
         help="Override stop time (natural language or ISO-8601).",
+    )
+    p_amend.add_argument(
+        "--split-at",
+        metavar="<datetime>",
+        default=None,
+        help="Split: end the interval here (requires --resume-at).",
+    )
+    p_amend.add_argument(
+        "--resume-at",
+        metavar="<datetime>",
+        default=None,
+        help="Split: start the second part here (requires --split-at).",
     )
     p_amend.add_argument(
         "--add-tag",
@@ -1315,6 +1369,20 @@ def main() -> None:
             session_id=args.session_id,
             project_dir=project_dir,
         )
+    elif args.cmd == "add":
+        from bd_track.track import cmd_add
+
+        cmd_add(
+            args.issue_id,
+            start=args.start,
+            stop=args.stop,
+            actor=args.actor,
+            role=args.role,
+            group_id=args.group_id,
+            dry_run=args.dry_run,
+            session_id=args.session_id,
+            project_dir=project_dir,
+        )
     elif args.cmd == "amend":
         from bd_track.track import cmd_amend
 
@@ -1322,6 +1390,8 @@ def main() -> None:
             args.interval_id,
             start=args.start,
             stop=args.stop,
+            split_at=args.split_at,
+            resume_at=args.resume_at,
             add_tags=args.add_tags,
             remove_tags=args.remove_tags,
             tag_ops=args.tag_ops,

@@ -347,3 +347,176 @@ def test_active_json_lists_open_and_paused(proj, monkeypatch, capsys):
     rows = json.loads(capsys.readouterr().out)
     assert [(r["state"], r["bead"]) for r in rows] == [("open", "bead-B"), ("paused", "bead-A")]
     assert rows[1]["title"] == "Title A" and rows[1]["session"] == "s1"
+
+
+# ---------------------------------------------------------------------------
+# add / amend --split-at (bd-timew-1fj)
+# ---------------------------------------------------------------------------
+
+
+def _dt(ts):
+    import datetime as dt
+
+    return dt.datetime.fromisoformat(ts)
+
+
+def _past(bdir, *, bead="bead-1", session="s1", start, stop=None, paused=False):
+    """An interval with explicit past times, written straight to the log."""
+    iid = events.start_interval(bead, ["svc:Z"], session_id=session, ts=start, actor="human")
+    if stop:
+        events.stop_interval(iid, session_id=session, ts=stop, paused=paused)
+    return iid
+
+
+def _by_id(bdir):
+    return {iv.interval: iv for iv in _intervals(bdir)}
+
+
+def test_add_records_closed_interval_without_claim_or_touching_open(proj, monkeypatch):
+    _issue(monkeypatch, status="closed")
+    calls = _claims(monkeypatch)
+    track.cmd_start("other", session_id="s1")
+    track.cmd_add(
+        "bead-1",
+        start="2026-11-04T17:08:00+00:00",
+        stop="2026-11-04T17:20:00+00:00",
+        session_id="s1",
+    )
+
+    added = [iv for iv in _intervals(proj) if iv.bead == "bead-1"]
+    assert len(added) == 1
+    assert added[0].status == "closed"
+    assert added[0].session == "s1"
+    assert added[0].tags == ["client:X", "case:Y", "svc:Z"]
+    assert added[0].duration.total_seconds() == 12 * 60
+    # The open interval on "other" is untouched and bead-1 was never claimed.
+    assert [iv.bead for iv in _open(proj, "s1")] == ["other"]
+    assert ["bd", "update", "bead-1", "--claim"] not in calls
+
+
+@pytest.mark.parametrize(
+    "start,stop",
+    [
+        ("2026-11-04T17:20:00+00:00", "2026-11-04T17:08:00+00:00"),  # stop before start
+        ("2026-11-04T17:08:00+00:00", "2099-01-01T00:00:00+00:00"),  # stop in the future
+    ],
+)
+def test_add_rejects_bad_span(proj, monkeypatch, start, stop):
+    _issue(monkeypatch)
+    with pytest.raises(SystemExit):
+        track.cmd_add("bead-1", start=start, stop=stop, session_id="s1")
+    assert _intervals(proj) == []
+
+
+def test_add_dry_run_writes_nothing(proj, monkeypatch):
+    _issue(monkeypatch)
+    track.cmd_add(
+        "bead-1",
+        start="2026-11-04T17:08:00+00:00",
+        stop="2026-11-04T17:20:00+00:00",
+        dry_run=True,
+        session_id="s1",
+    )
+    assert _intervals(proj) == []
+
+
+def test_add_warns_on_overlap_with_same_bead(proj, monkeypatch, caplog):
+    _issue(monkeypatch)
+    _past(proj, start="2026-11-04T17:00:00+00:00", stop="2026-11-04T18:00:00+00:00")
+    track.cmd_add(
+        "bead-1",
+        start="2026-11-04T17:30:00+00:00",
+        stop="2026-11-04T18:30:00+00:00",
+        session_id="s1",
+    )
+    assert "overlaps interval" in caplog.text
+
+
+def test_split_closed_interval_removes_gap(proj):
+    iid = _past(proj, start="2026-11-04T17:08:00+00:00", stop="2026-11-05T16:41:00+00:00")
+    track.cmd_amend(
+        iid[:8],
+        split_at="2026-11-04T17:20:00+00:00",
+        resume_at="2026-11-05T15:15:00+00:00",
+        session_id="s1",
+    )
+
+    ivs = _by_id(proj)
+    assert len(ivs) == 2
+    first = ivs.pop(iid)
+    (second,) = ivs.values()
+    assert _dt(first.stop) == _dt("2026-11-04T17:20:00+00:00")
+    assert _dt(second.start) == _dt("2026-11-05T15:15:00+00:00")
+    assert _dt(second.stop) == _dt("2026-11-05T16:41:00+00:00")
+    assert (second.bead, second.session, second.tags, second.actor) == (
+        "bead-1",
+        "s1",
+        ["svc:Z"],
+        "human",
+    )
+    total = first.duration + second.duration
+    assert total.total_seconds() == (12 + 86) * 60
+
+
+def test_split_open_interval_leaves_second_part_open(proj, monkeypatch):
+    iid = _past(proj, session="s2", start="2026-11-04T17:08:00+00:00")
+    track.cmd_amend(
+        iid,
+        split_at="2026-11-04T17:20:00+00:00",
+        resume_at="2026-11-05T15:15:00+00:00",
+        session_id="s1",
+    )
+
+    ivs = _by_id(proj)
+    assert ivs[iid].status == "closed"
+    (second,) = [iv for iid2, iv in ivs.items() if iid2 != iid]
+    assert second.status == "open"
+    assert second.session == "s2"  # the owning session, not the caller's
+    # The owning session's stop closes the second part.
+    track.cmd_stop(session_id="s2")
+    assert _open(proj) == []
+
+
+def test_split_paused_interval_moves_pause_to_second_part(proj):
+    iid = _past(
+        proj,
+        start="2026-11-04T17:08:00+00:00",
+        stop="2026-11-05T16:41:00+00:00",
+        paused=True,
+    )
+    track.cmd_amend(
+        iid,
+        split_at="2026-11-04T17:20:00+00:00",
+        resume_at="2026-11-05T15:15:00+00:00",
+        session_id="s1",
+    )
+    ivs = _by_id(proj)
+    assert not ivs.pop(iid).paused
+    (second,) = ivs.values()
+    assert second.paused
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        # resume before split
+        {"split_at": "2026-11-05T15:15:00+00:00", "resume_at": "2026-11-04T17:20:00+00:00"},
+        # split before the interval's start
+        {"split_at": "2026-11-04T17:00:00+00:00", "resume_at": "2026-11-05T15:15:00+00:00"},
+        # resume after the interval's stop
+        {"split_at": "2026-11-04T17:20:00+00:00", "resume_at": "2026-11-05T17:00:00+00:00"},
+        # only one of the pair
+        {"split_at": "2026-11-04T17:20:00+00:00"},
+        # combined with another correction
+        {
+            "split_at": "2026-11-04T17:20:00+00:00",
+            "resume_at": "2026-11-05T15:15:00+00:00",
+            "role": "x",
+        },
+    ],
+)
+def test_split_rejects_invalid(proj, kwargs):
+    iid = _past(proj, start="2026-11-04T17:08:00+00:00", stop="2026-11-05T16:41:00+00:00")
+    with pytest.raises(SystemExit):
+        track.cmd_amend(iid, session_id="s1", **kwargs)
+    assert len(_intervals(proj)) == 1
