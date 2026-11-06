@@ -2,7 +2,7 @@
 
 Two layers: the command layer (start/stop/status act on ``project_dir`` and run ``bd`` there,
 whatever the cwd) and the CLI layer (``--project`` before or after the subcommand, the
-deprecated ``--project-dir`` alias, and the conflicts that exit instead of being ignored).
+removed ``--project-dir`` alias, and the conflicts that exit instead of being ignored).
 """
 
 from __future__ import annotations
@@ -130,18 +130,16 @@ def test_unregistered_path_is_used_as_given(monkeypatch, tmp_path, captured):
     assert captured["start"] == root.resolve()
 
 
-def test_project_dir_alias_warns_and_still_works(monkeypatch, tmp_path, captured, caplog):
-    root = tmp_path / "proj"
-    with caplog.at_level("WARNING", logger="bd-track"):
-        _main(monkeypatch, "queue", "list", "--project-dir", str(root))
-    assert captured["queue"] == root
-    assert "--project-dir is deprecated" in caplog.text
+def test_project_dir_alias_is_gone(monkeypatch, tmp_path, captured):
+    with pytest.raises(SystemExit) as exc:
+        _main(monkeypatch, "queue", "list", "--project-dir", str(tmp_path))
+    assert exc.value.code != 0
+    assert "queue" not in captured
 
 
 @pytest.mark.parametrize(
     ("argv", "message"),
     [
-        (("queue", "list", "--project", "{root}", "--project-dir", "{root}"), "not both"),
         (("--global", "status", "--project", "{root}"), "mutually exclusive"),
         (("--project", "{root}", "servers"), "does not apply to `servers`"),
         (("--project", "{root}/missing", "status"), "nor an existing directory"),

@@ -167,8 +167,8 @@ Beads workspace of the current directory. `bd-track --project api start <id>` cl
 and tracks the bead in `api` from any directory. `--global` instead covers every
 registered beads project, for `pause`, `resume`, `show`, `list`, `active` and `report`.
 The commands that span projects (`init-project`, `servers`, `server-stop`, `idle-stop`)
-refuse `--project`. The old `--project-dir <path>` still works for one release, with a
-deprecation warning.
+refuse `--project`. The old `--project-dir <path>` was removed in 0.10.0: pass the path
+to `--project`.
 
 ### `queue clean` vs `queue prune`
 

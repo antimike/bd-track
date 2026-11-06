@@ -6,17 +6,28 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-05
+
+Fix intervals that span an idle gap (`add`, `amend --split-at`), a warning when one is
+closed, and `--project-dir` removed.
+
+### Breaking
+
+- **`--project-dir` removed** (deprecated in 0.9.0): pass the path to `--project`, which
+  takes a registry name or a directory.
+
 ### Added
 
 - **`bd-track add <bead> --start <t> --stop <t>`** (`bd-timew-1fj`): records a closed
   interval with past times, tagged with the bead's billing tuple. It does not claim the
   bead, change its status or stop any open interval, and warns when the span overlaps
-  another interval on the same bead.
+  another interval on the same bead. `--dry-run` prints the interval without writing it.
 - **`bd-track amend <id> --split-at <t1> --resume-at <t2>`** (`bd-timew-1fj`): cuts an
   idle gap (e.g. a session left open overnight) out of an interval. The interval stops at
   `t1` and a new one with the same bead, tags and provenance runs from `t2` to the old
   stop. An open interval's second part stays open in its own session, and a paused
-  interval's pause moves to the second part.
+  interval's pause moves to the second part. The two flags go together and cannot be
+  combined with other `amend` options.
 - **Long-interval warning** (`bd-timew-pnj`): `stop`, `pause`, `switch` and `start` warn
   when they close an interval longer than the new host setting `long_interval_hours`
   (default 8; `0` disables; `bd-track config set long_interval_hours <n>`), pointing at
@@ -427,7 +438,8 @@ time-tracking workflow into a multi-module Python package.
   v0.2.0.
 - systemd user units for cleanup and idle-stop timers.
 
-[Unreleased]: https://github.com/antimike/bd-track/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/antimike/bd-track/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/antimike/bd-track/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/antimike/bd-track/compare/v0.8.1...v0.9.0
 [0.8.1]: https://github.com/antimike/bd-track/compare/v0.8.0...v0.8.1
 [0.8.0]: https://github.com/antimike/bd-track/compare/v0.7.0...v0.8.0
