@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from bd_track.util import HelpFormatter, root_log, setup_logger
+from bd_track.util import HelpFormatter, setup_logger
 
 # Mirrors aggregate.POLICIES keys; duplicated here so argparse choices don't
 # force an eager import of the aggregator at CLI-startup time.
@@ -83,10 +83,10 @@ _PROJECT_HELP = (
 )
 
 
-def _add_project_option(parser: argparse.ArgumentParser, *, legacy: bool = False) -> None:
-    """Accept ``--project`` after the subcommand too, plus the deprecated ``--project-dir``.
+def _add_project_option(parser: argparse.ArgumentParser) -> None:
+    """Accept ``--project`` after the subcommand too.
 
-    Both default to SUPPRESS so a subparser never resets a top-level ``--project`` to None.
+    It defaults to SUPPRESS so a subparser never resets a top-level ``--project`` to None.
     """
     parser.add_argument(
         "--project",
@@ -95,13 +95,6 @@ def _add_project_option(parser: argparse.ArgumentParser, *, legacy: bool = False
         default=argparse.SUPPRESS,
         help=_PROJECT_HELP,
     )
-    if legacy:
-        parser.add_argument(
-            "--project-dir",
-            dest="project_dir_alias",
-            default=argparse.SUPPRESS,
-            help=argparse.SUPPRESS,
-        )
 
 
 def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
@@ -132,7 +125,7 @@ def _add_triage_parsers(sub: argparse._SubParsersAction) -> None:
             default=default,
             help="The project's inbox directory (holds triage/ and done/).",
         )
-        _add_project_option(parser, legacy=True)
+        _add_project_option(parser)
         parser.add_argument(
             "--dry-run",
             action="store_true",
@@ -275,7 +268,7 @@ def _add_queue_parsers(sub: argparse._SubParsersAction) -> None:
         default=None,
         help="Queue scope name. Resolved: --scope flag → $BD_TRACK_SCOPE → 'default'.",
     )
-    _add_project_option(common, legacy=True)
+    _add_project_option(common)
     common.add_argument(
         "--titles",
         "-t",
@@ -947,7 +940,7 @@ def get_cli_arguments() -> argparse.Namespace:
         help="Resolve and print the session id for this invocation context.",
         formatter_class=HelpFormatter,
     )
-    _add_project_option(p_session_current, legacy=True)
+    _add_project_option(p_session_current)
 
     # -- cleanup -------------------------------------------------------------
     p_cleanup = sub.add_parser(
@@ -972,7 +965,7 @@ def get_cli_arguments() -> argparse.Namespace:
     p_cleanup.add_argument(
         "--commit", action="store_true", help="Run  bd dolt commit  before compacting."
     )
-    _add_project_option(p_cleanup, legacy=True)
+    _add_project_option(p_cleanup)
 
     # -- init-project --------------------------------------------------------
     p_init = sub.add_parser(
@@ -1058,7 +1051,7 @@ def get_cli_arguments() -> argparse.Namespace:
         help="Scaffold a per-project .beads/bd-track.yaml from the packaged template.",
         formatter_class=HelpFormatter,
     )
-    _add_project_option(p_config_init, legacy=True)
+    _add_project_option(p_config_init)
     p_config_set = p_config_sub.add_parser(
         "set",
         help="Write one host setting into $XDG_CONFIG_HOME/bd-track/config.yaml.",
@@ -1131,7 +1124,7 @@ def get_cli_arguments() -> argparse.Namespace:
         ),
         formatter_class=HelpFormatter,
     )
-    _add_project_option(p_migrate_rename, legacy=True)
+    _add_project_option(p_migrate_rename)
     p_migrate_rename.add_argument(
         "--all-repos",
         action="store_true",
@@ -1186,7 +1179,7 @@ def get_cli_arguments() -> argparse.Namespace:
         ),
         formatter_class=HelpFormatter,
     )
-    _add_project_option(p_migrate_import, legacy=True)
+    _add_project_option(p_migrate_import)
     p_migrate_import.add_argument(
         "--from-file",
         type=Path,
@@ -1272,26 +1265,12 @@ def _dispatch_queue(args: argparse.Namespace, project_dir: Path | None) -> None:
 
 
 def _resolve_project_scope(args: argparse.Namespace) -> Path | None:
-    """Return the project root named by ``--project`` (or ``--project-dir``), else ``None``.
-
-    ``--project-dir`` is the deprecated spelling: it warns, and keeps its old meaning (a path
-    used as given, no registry lookup).
-    """
-    legacy = getattr(args, "project_dir_alias", None)
-    if legacy is not None:
-        root_log.warning(
-            "--project-dir is deprecated and will be removed in a future release; "
-            "use --project <name-or-path>"
-        )
-        if args.project_scope:
-            sys.exit("bd-track: give --project or --project-dir, not both")
-    if (args.project_scope or legacy is not None) and args.global_scope:
+    """Return the project root named by ``--project``, else ``None``."""
+    if args.project_scope and args.global_scope:
         sys.exit("bd-track: --project and --global are mutually exclusive")
     command = " ".join(filter(None, (args.cmd, getattr(args, "config_action", None))))
-    if (args.project_scope or legacy is not None) and command in _PROJECTLESS_COMMANDS:
+    if args.project_scope and command in _PROJECTLESS_COMMANDS:
         sys.exit(f"bd-track: --project does not apply to `{command}`")
-    if legacy is not None:
-        return Path(legacy).expanduser()
     if args.project_scope:
         from bd_track.util import resolve_project_dir
 

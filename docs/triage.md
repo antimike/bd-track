@@ -45,8 +45,7 @@ the ticket stays open, see below) or **[q]uit**. The loop is built only on `list
 each action instead of writing. It needs a terminal; scripts and agents use the commands below.
 
 The shared options (`--inbox`, `--project`, `--dry-run`) go before or after the action.
-`--project` takes a registry name or a directory; the deprecated `--project-dir DIR` still
-works, with a warning.
+`--project` takes a registry name or a directory.
 
 ## Asking about a ticket
 

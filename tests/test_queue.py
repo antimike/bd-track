@@ -133,7 +133,7 @@ def test_unshift_rejects_non_id_and_leaves_queue_unchanged(beads_dir):
 
 def test_cli_push_with_space_exits_nonzero(beads_dir):
     """The bead's done-when: `bd-track queue push --scope s "a b"` fails, queue unchanged."""
-    argv = ["queue", "push", "--scope", "s", "a b", "--project-dir", str(beads_dir.parent)]
+    argv = ["queue", "push", "--scope", "s", "a b", "--project", str(beads_dir.parent)]
     proc = subprocess.run(
         [sys.executable, "-m", "bd_track", *argv],
         capture_output=True,
