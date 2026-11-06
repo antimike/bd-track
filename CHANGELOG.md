@@ -6,6 +6,15 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Fixed
+
+- **`cleanup` commits before compacting by default** (`bd-timew-amk`): without `--commit`
+  it used to skip `bd dolt commit`, and `bd compact` then discarded the uncommitted working
+  set (`dolt.auto-commit batch`), deleting beads. It now always commits first; `--no-commit`
+  is the explicit opt-out and `--commit` is still accepted. If the commit fails, cleanup
+  stops before compact and exits 1. The cleanup service logs the failure and retries that
+  project on its next run.
+
 ## [0.10.0] - 2026-11-05
 
 Fix intervals that span an idle gap (`add`, `amend --split-at`), a warning when one is
