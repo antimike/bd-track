@@ -79,6 +79,7 @@ on each host:
 global:
   check_interval: daily       # systemd timer cadence for bd-track cleanup
   idle_stop_hours: 4          # 0 disables the idle-stop timer
+  long_interval_hours: 8      # warn when stop/pause closes a longer interval; 0 disables
   dolt_push: false            # always | never | true | false
   dolt_remote_url: ~          # git repo for Dolt pushes (none: no default)
   dolt_push_timeout: 120      # seconds before a push is killed

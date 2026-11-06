@@ -275,6 +275,7 @@ def test_host_config_defaults_and_sources(home: Path):
     assert load_host_config() == {
         "check_interval": "daily",
         "idle_stop_hours": 4,
+        "long_interval_hours": 8,
         "dolt_push": False,
         "dolt_remote_url": None,
         "dolt_push_timeout": 120,

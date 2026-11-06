@@ -518,8 +518,10 @@ def test_config_set_writes_parsed_value_and_keeps_comments(reg_home: Path):
     (reg_home / "config.yaml").write_text(_HOST_YAML)
     project.cmd_config_set("idle_stop_hours", "3")
     project.cmd_config_set("scan_roots", "[~/src, ~/work]")
+    project.cmd_config_set("long_interval_hours", "10.5")
     host = load_host_config()
     assert host["idle_stop_hours"] == 3
+    assert host["long_interval_hours"] == 10.5
     assert host["scan_roots"] == ["~/src", "~/work"]
     text = (reg_home / "config.yaml").read_text()
     assert "# managed elsewhere" in text and "# keep" in text
@@ -538,6 +540,8 @@ def test_config_set_creates_missing_file(reg_home: Path):
     [
         ("idle_stop_hours", "-1", "whole number"),
         ("idle_stop_hours", "true", "whole number"),
+        ("long_interval_hours", "-2", "number of hours"),
+        ("long_interval_hours", "soon", "number of hours"),
         ("check_interval", "[daily]", "must be a string"),
         ("dolt_push", "maybe", "dolt_push"),  # rejected by load_host_config, then rolled back
     ],

@@ -941,6 +941,10 @@ def cmd_config_set(key: str, value: str) -> None:
         not isinstance(parsed, int) or isinstance(parsed, bool) or parsed < 0
     ):
         sys.exit("bd-track config set: idle_stop_hours must be a whole number of hours, 0 or more")
+    if key == "long_interval_hours" and (
+        not isinstance(parsed, (int, float)) or isinstance(parsed, bool) or parsed < 0
+    ):
+        sys.exit("bd-track config set: long_interval_hours must be a number of hours, 0 or more")
     if key == "check_interval" and not isinstance(parsed, str):
         sys.exit("bd-track config set: check_interval must be a string (e.g. daily, 12h)")
 

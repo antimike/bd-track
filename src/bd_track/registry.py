@@ -484,6 +484,7 @@ def load_host_config() -> dict:
     host = dict(data.get("global") or {})
     host.setdefault("check_interval", "daily")
     host.setdefault("idle_stop_hours", 4)
+    host.setdefault("long_interval_hours", 8)
     host.setdefault("dolt_push", False)
     host.setdefault("dolt_remote_url", None)
     host.setdefault("dolt_push_timeout", DEFAULT_PUSH_TIMEOUT)
@@ -711,6 +712,7 @@ def set_project(name: str, values: dict, explicit: Path | None = None) -> Path:
 HOST_KEYS = (
     "check_interval",
     "idle_stop_hours",
+    "long_interval_hours",
     "dolt_push",
     "defaults",
     "scan_roots",

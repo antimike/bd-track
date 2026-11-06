@@ -17,6 +17,7 @@ _REPORT_POLICIES = ("billing", "machine", "wallclock")
 _HOST_KEYS = (
     "check_interval",
     "idle_stop_hours",
+    "long_interval_hours",
     "dolt_push",
     "defaults",
     "scan_roots",
