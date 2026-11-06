@@ -17,6 +17,10 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `t1` and a new one with the same bead, tags and provenance runs from `t2` to the old
   stop. An open interval's second part stays open in its own session, and a paused
   interval's pause moves to the second part.
+- **Long-interval warning** (`bd-timew-pnj`): `stop`, `pause`, `switch` and `start` warn
+  when they close an interval longer than the new host setting `long_interval_hours`
+  (default 8; `0` disables; `bd-track config set long_interval_hours <n>`), pointing at
+  `amend --split-at` and `add` to remove an idle gap.
 
 ## [0.9.0] - 2026-11-05
 
