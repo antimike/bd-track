@@ -155,11 +155,17 @@ def start_interval(
     actor: str | None = None,
     role: str | None = None,
     resumed_from: str | None = None,
+    ts: str | None = None,
     project_dir: Path | None = None,
 ) -> str:
-    """Append a ``start`` event and return the new interval id (ULID)."""
+    """Append a ``start`` event and return the new interval id (ULID).
+
+    ``ts`` overrides the default now() timestamp — used by ``add`` and ``amend --split-at``.
+    """
     interval = str(ULID())
     event = _base_event("start", interval, session_id)
+    if ts is not None:
+        event["ts"] = ts
     event.update(
         {
             "bead": bead,
