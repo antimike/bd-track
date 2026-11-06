@@ -6,6 +6,18 @@ project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **`bd-track add <bead> --start <t> --stop <t>`** (`bd-timew-1fj`): records a closed
+  interval with past times, tagged with the bead's billing tuple. It does not claim the
+  bead, change its status or stop any open interval, and warns when the span overlaps
+  another interval on the same bead.
+- **`bd-track amend <id> --split-at <t1> --resume-at <t2>`** (`bd-timew-1fj`): cuts an
+  idle gap (e.g. a session left open overnight) out of an interval. The interval stops at
+  `t1` and a new one with the same bead, tags and provenance runs from `t2` to the old
+  stop. An open interval's second part stays open in its own session, and a paused
+  interval's pause moves to the second part.
+
 ## [0.9.0] - 2026-11-05
 
 One `--project` flag for every single-project command, XDG base directories honoured,
