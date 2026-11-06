@@ -137,6 +137,42 @@ def _caller_session(root: Path, session_id: str | None) -> str | None:
         return None
 
 
+def _long_interval_threshold() -> dt.timedelta | None:
+    """Host ``long_interval_hours`` as a timedelta; None when disabled or unreadable.
+
+    The warning it drives is advisory, so a broken host config never fails a stop.
+    """
+    from bd_track import registry
+
+    try:
+        hours = registry.load_host_config()["long_interval_hours"]
+    except registry.RegistryError as exc:
+        root_log.debug("long-interval warning skipped: %s", exc)
+        return None
+    if isinstance(hours, bool) or not isinstance(hours, (int, float)) or hours <= 0:
+        return None
+    return dt.timedelta(hours=hours)
+
+
+def _warn_if_long(iv: Interval, stop: dt.datetime, threshold: dt.timedelta | None) -> None:
+    """Warn when closing ``iv`` at ``stop`` spans more than ``threshold`` (likely an idle gap)."""
+    if threshold is None or iv.start is None:
+        return
+    span = stop - dt.datetime.fromisoformat(iv.start)
+    if span <= threshold:
+        return
+    root_log.warning(
+        "%s %s ran %s, longer than long_interval_hours (%s): if part of it was idle, "
+        "`bd-track amend %s --split-at <t1> --resume-at <t2>` removes the gap, and "
+        "`bd-track add` records a stretch after trimming",
+        iv.bead or "(no bead)",
+        iv.interval[:8],
+        _format_duration(span),
+        f"{threshold.total_seconds() / 3600:g}h",
+        iv.interval[:8],
+    )
+
+
 def _select(
     ivs: list[Interval], *, beads: list[str], all_sessions: bool, sid: str | None
 ) -> list[Interval]:
@@ -183,8 +219,11 @@ def cmd_start(
     sid = resolve_session_id(project_root, explicit=session_id)
 
     # Single-active-per-session: end this session's own open interval(s) first.
-    for iv in _session_open(sid, project_root):
+    prior = _session_open(sid, project_root)
+    threshold = _long_interval_threshold() if prior else None
+    for iv in prior:
         stop_interval(iv.interval, session_id=sid, project_dir=project_root)
+        _warn_if_long(iv, dt.datetime.now().astimezone(), threshold)
         root_log.info("Stopped prior interval %s (%s)", iv.bead or "?", _elapsed(iv.start))
 
     tags = _build_tags(tuple_)
@@ -252,6 +291,7 @@ def cmd_stop(
         if not paused:
             scope = f" for {issue_id}" if issue_id else ""
             root_log.info("no active interval%s in this session (%s)", scope, sid)
+    threshold = _long_interval_threshold() if opens else None
     for iv in opens:
         if at_dt is not None and iv.start is not None:
             start_dt = dt.datetime.fromisoformat(iv.start)
@@ -269,6 +309,7 @@ def cmd_stop(
         else:
             elapsed = _elapsed(iv.start)
         root_log.info("Stopped %s  %s  (%s)", iv.bead or "(no bead)", iv.interval[:8], elapsed)
+        _warn_if_long(iv, at_dt or dt.datetime.now().astimezone(), threshold)
 
     if clean:
         from bd_track.queue import STOP_SWEEP_STATUSES, cmd_clean
@@ -312,6 +353,7 @@ def cmd_pause(
     error: hooks call this blindly.
     """
     count = 0
+    threshold = _long_interval_threshold()
     for root in _project_roots(project_dir, global_scope):
         sid = _caller_session(root, session_id)
         opens = open_intervals(load_intervals(log_dir(root)))
@@ -327,6 +369,7 @@ def cmd_pause(
                 _elapsed(iv.start),
                 iv.session,
             )
+            _warn_if_long(iv, dt.datetime.now().astimezone(), threshold)
     if not count:
         root_log.info("nothing to pause: no matching open interval")
 

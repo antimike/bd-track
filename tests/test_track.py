@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import pytest
 
-from bd_track import events, track
+from bd_track import events, registry, track
 from bd_track.aggregate import load_intervals
 from bd_track.events import log_dir
 
@@ -31,6 +31,8 @@ def proj(monkeypatch, tmp_path):
         track, "resolve_tuple", lambda labels, sidecar: {"client": "X", "case": "Y", "svc": "Z"}
     )
     monkeypatch.setattr(track, "record_activity", lambda *a, **k: None)
+    # Never read the developer's real host config (long-interval warning threshold).
+    monkeypatch.setattr(registry, "load_host_config", lambda: {"long_interval_hours": 8})
     return bdir
 
 
@@ -520,3 +522,64 @@ def test_split_rejects_invalid(proj, kwargs):
     with pytest.raises(SystemExit):
         track.cmd_amend(iid, session_id="s1", **kwargs)
     assert len(_intervals(proj)) == 1
+
+
+# ---------------------------------------------------------------------------
+# long-interval warning (bd-timew-pnj)
+# ---------------------------------------------------------------------------
+
+
+def _hours_ago(hours):
+    import datetime as dt
+
+    return (dt.datetime.now().astimezone() - dt.timedelta(hours=hours)).isoformat(
+        timespec="seconds"
+    )
+
+
+def test_stop_warns_on_interval_over_threshold(proj, caplog):
+    iid = _past(proj, start=_hours_ago(23))
+    track.cmd_stop(clean=False, session_id="s1")
+    assert "longer than long_interval_hours (8h)" in caplog.text
+    assert f"amend {iid[:8]} --split-at" in caplog.text
+
+
+def test_stop_quiet_under_threshold(proj, caplog):
+    _past(proj, start=_hours_ago(2))
+    track.cmd_stop(clean=False, session_id="s1")
+    assert "long_interval_hours" not in caplog.text
+
+
+def test_stop_at_measures_to_the_given_time(proj, caplog):
+    _past(proj, start=_hours_ago(23))
+    track.cmd_stop(clean=False, session_id="s1", at=_hours_ago(22))
+    assert "long_interval_hours" not in caplog.text
+
+
+def test_long_interval_warning_disabled_by_zero(proj, monkeypatch, caplog):
+    monkeypatch.setattr(registry, "load_host_config", lambda: {"long_interval_hours": 0})
+    _past(proj, start=_hours_ago(23))
+    track.cmd_stop(clean=False, session_id="s1")
+    assert "long_interval_hours" not in caplog.text
+
+
+def test_long_interval_warning_survives_broken_host_config(proj, monkeypatch):
+    def broken():
+        raise registry.RegistryError("bad config")
+
+    monkeypatch.setattr(registry, "load_host_config", broken)
+    _past(proj, start=_hours_ago(23))
+    track.cmd_stop(clean=False, session_id="s1")
+    assert _open(proj) == []
+
+
+def test_pause_and_start_warn_on_long_interval(proj, monkeypatch, caplog):
+    _issue(monkeypatch, status="in_progress")
+    _past(proj, start=_hours_ago(23))
+    track.cmd_pause(session_id="s1")
+    assert caplog.text.count("long_interval_hours") == 1
+
+    caplog.clear()
+    _past(proj, bead="bead-2", start=_hours_ago(23))
+    track.cmd_start("bead-3", session_id="s1")
+    assert caplog.text.count("long_interval_hours") == 1
